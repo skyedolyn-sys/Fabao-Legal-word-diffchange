@@ -1,0 +1,263 @@
+{
+  "version": "1.0.0",
+  "description": "NDA-specific risk assessment rules. Optimized for Non-Disclosure Agreement revision review from the service provider / receiving party perspective.",
+  "playbook_id": "nda",
+  "risk_levels": {
+    "high": {
+      "label": "强烈反对",
+      "emoji": "🔴",
+      "description": "对乙方有重大不利影响，必须要求修改"
+    },
+    "medium": {
+      "label": "需协商",
+      "emoji": "🟠",
+      "description": "对乙方有一定影响，建议争取更有利条件"
+    },
+    "low": {
+      "label": "可接受",
+      "emoji": "🟢",
+      "description": "对乙方影响较小或有利，可直接接受"
+    }
+  },
+  "rules": [
+    {
+      "id": "nda_def_001",
+      "name": "保密信息定义过宽",
+      "applies_to_clause_types": ["保密信息定义", "协议结构"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": [
+          "所有信息", "任何信息", "all information", "any information",
+          "无论是否标记", "无论形式", "whether or not marked",
+          "口头信息", "oral information", "未书面确认",
+          "包括但不限于", "including but not limited to",
+          "双方之间交换", "exchanged between"
+        ]
+      },
+      "risk_level": "high",
+      "rationale": "保密信息定义过宽，可能导致日常商务信息被纳入保密范围，增加合规负担"
+    },
+    {
+      "id": "nda_def_002",
+      "name": "残余记忆条款",
+      "applies_to_clause_types": ["保密义务"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": [
+          "不得使用任何保密信息", "not use any confidential information",
+          "记忆", "memorized", "学习", "learned",
+          "知识", "knowledge", "不得保留", "not retain",
+          "experienced", "in mind"
+        ]
+      },
+      "risk_level": "high",
+      "rationale": "要求接收方遗忘已学习的保密信息，实际无法履行，可能导致违约风险"
+    },
+    {
+      "id": "nda_obl_001",
+      "name": "单方保密义务",
+      "applies_to_clause_types": ["保密义务", "协议结构"],
+      "applies_to_revision_types": ["insertion", "deletion"],
+      "patterns": {
+        "deletion": ["双方", "mutual", "互相", "各自"],
+        "insertion": [
+          "接收方", "receiving party", "乙方",
+          "只有乙方", "仅乙方", "单方"
+        ]
+      },
+      "risk_level": "high",
+      "rationale": "仅要求接收方承担保密义务而披露方免责，权利义务不对等"
+    },
+    {
+      "id": "nda_obl_002",
+      "name": "保密标准过高",
+      "applies_to_clause_types": ["保密义务"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": [
+          "最高标准", "highest standard", "绝对安全",
+          "不得有任何泄露", "no breach", "零容忍",
+          "银行级安全", "military grade", "军事级"
+        ]
+      },
+      "risk_level": "medium",
+      "rationale": "要求超出行业标准的保密措施，实际难以达成"
+    },
+    {
+      "id": "nda_obl_003",
+      "name": "扩大披露对象范围",
+      "applies_to_clause_types": ["保密义务"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": [
+          "顾问", "consultants", "代理商", "agents",
+          "投资方", "investors", "任何第三方",
+          "无需事先同意", "without prior consent",
+          "无需书面同意", "without written consent"
+        ]
+      },
+      "risk_level": "medium",
+      "rationale": "允许向过多第三方披露，且无需事先同意，增加信息泄露风险"
+    },
+    {
+      "id": "nda_term_001",
+      "name": "永久保密义务",
+      "applies_to_clause_types": ["期限"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": [
+          "永久", "perpetual", "perpetuity", "无限期",
+          "indefinite", "never expires", "永远",
+          "永久有效", "始终"
+        ]
+      },
+      "risk_level": "high",
+      "rationale": "永久保密义务超出合理范围，建议设定3-5年上限"
+    },
+    {
+      "id": "nda_term_002",
+      "name": "保密期限过长",
+      "applies_to_clause_types": ["期限"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": [
+          "10年", "15年", "二十年", "20年",
+          "十年", "十五年"
+        ]
+      },
+      "risk_level": "medium",
+      "rationale": "保密期限超过行业惯例（通常3-5年），建议协商缩短"
+    },
+    {
+      "id": "nda_ret_001",
+      "name": "无保留例外",
+      "applies_to_clause_types": ["信息返还"],
+      "applies_to_revision_types": ["insertion", "deletion"],
+      "patterns": {
+        "deletion": ["法律保留", "备份保留", "法律要求"],
+        "insertion": [
+          "全部返还", "不得保留", "no copies",
+          "不得备份", "必须销毁所有"
+        ]
+      },
+      "risk_level": "medium",
+      "rationale": "要求销毁所有信息副本，未考虑法律保留和备份需求"
+    },
+    {
+      "id": "nda_rem_001",
+      "name": "救济措施过重",
+      "applies_to_clause_types": ["救济与违约"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": [
+          "无需担保", "without bond", "without posting bond",
+          "无需证明损害", "无需证明损失", "irreparable harm",
+          "不可弥补", "推定损害", "presumed damages",
+          "惩罚性赔偿", "punitive damages"
+        ]
+      },
+      "risk_level": "high",
+      "rationale": "允许对方无需担保即申请禁止令，且推定存在不可弥补损害，对乙方极为不利"
+    },
+    {
+      "id": "nda_rem_002",
+      "name": "违约金过高",
+      "applies_to_clause_types": ["救济与违约"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": [
+          "每次违约", "per breach", "每次泄露",
+          "最低赔偿", "minimum damages", "不低于",
+          "固定金额", "lump sum"
+        ]
+      },
+      "risk_level": "medium",
+      "rationale": "设定固定违约金或不合理最低赔偿，可能导致轻微违约承担过重责任"
+    },
+    {
+      "id": "nda_ip_001",
+      "name": "知识产权归属混淆",
+      "applies_to_clause_types": ["知识产权"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": [
+          "披露方享有", "归披露方", "joint ownership",
+          "共同所有", "共同享有", "背景IP",
+          "背景知识产权", "改进归"
+        ]
+      },
+      "risk_level": "high",
+      "rationale": "NDA中不应涉及知识产权归属条款，可能混淆保密义务与知识产权转让"
+    },
+    {
+      "id": "nda_ip_002",
+      "name": "禁止反向工程",
+      "applies_to_clause_types": ["知识产权", "除外情形"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": [
+          "不得反向工程", "no reverse engineering",
+          "不得反编译", "no decompilation",
+          "不得反汇编", "no disassembly"
+        ]
+      },
+      "risk_level": "medium",
+      "rationale": "在NDA中加入反向工程限制，超出保密协议合理范围"
+    },
+    {
+      "id": "nda_noncompete_001",
+      "name": "混入竞业限制条款",
+      "applies_to_clause_types": ["保密义务", "协议结构"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": [
+          "竞业", "non-compete", "non compete",
+          "不得与.*竞争", "不得开发", "不得从事",
+          "不得接触", "排他性", "exclusivity",
+          "不得招揽", "non-solicit", "挖角"
+        ]
+      },
+      "risk_level": "high",
+      "rationale": "NDA中混入竞业限制或非招揽条款，超出保密协议范围，可能无效但增加法律风险"
+    },
+    {
+      "id": "nda_jurisdiction_001",
+      "name": "对方所在地管辖",
+      "applies_to_clause_types": ["其他"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": [
+          "甲方所在地", "disclosing party", "披露方所在地",
+          "原告所在地", "plaintiff", "对方法院",
+          "对方仲裁"
+        ]
+      },
+      "risk_level": "medium",
+      "rationale": "争议解决地点在对方所在地，增加应诉成本"
+    },
+    {
+      "id": "nda_warranty_001",
+      "name": "混入保证条款",
+      "applies_to_clause_types": ["协议结构"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": [
+          "保证", "warranty", "warranties",
+          "陈述", "representation", "representations",
+          "权利完整", "有权披露", "right to disclose"
+        ]
+      },
+      "risk_level": "medium",
+      "rationale": "NDA中加入保证条款，要求披露方声明拥有完整权利，增加乙方审查义务"
+    }
+  ],
+  "scoring": {
+    "multiple_matches": "take_highest",
+    "no_match_default": "low",
+    "confidence_threshold": {
+      "high": 0.8,
+      "medium": 0.5,
+      "low": 0.0
+    }
+  }
+}

@@ -1,0 +1,821 @@
+{
+  "version": "1.0.0",
+  "description": "风险规则到写入动作的映射。每个规则对应一个建议的修改动作模板，由 write_plan_generator.py 读取并生成 write_plan_template。LLM 在 Step 6 根据具体上下文填充占位符。",
+  "disposition_definitions": {
+    "mandatory": "规则匹配的修改属于必须执行的核心修改，默认执行",
+    "negotiable": "规则匹配的修改属于建议性修改，需用户确认后执行"
+  },
+  "action_templates": {
+    "rule_liability_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "{extracted_risky_text}，但乙方承担的责任上限不超过合同总金额的 [{suggested_cap}% / 具体金额]",
+        "fallback": "在违约责任条款中增加责任上限条款"
+      },
+      "rationale": "取消责任上限显著扩大乙方风险敞口，必须增加责任上限保护"
+    },
+    "rule_liability_002": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "基于过错程度承担相应责任",
+        "fallback": "删除无过错责任表述，恢复过错责任原则"
+      },
+      "rationale": "无过错责任要求乙方为不可控因素担责，必须修改为过错责任"
+    },
+    "rule_ip_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "乙方保留交付物中的背景知识产权和通用方法论的所有权，仅授予甲方有限的使用许可",
+        "fallback": "在知识产权条款中增加乙方保留权的但书"
+      },
+      "rationale": "完全转让知识产权使乙方丧失后续使用权，必须保留背景IP"
+    },
+    "rule_ip_002": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "乙方已有的背景知识产权不在转让范围内",
+        "fallback": "明确排除背景IP的转让义务"
+      },
+      "rationale": "要求转让乙方已有背景IP超出合理范围"
+    },
+    "rule_data_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "承担因乙方重大过失或故意行为导致的第三方索赔",
+        "fallback": "将第三方索赔限制在乙方过错范围内"
+      },
+      "rationale": "承担所有第三方索赔责任不可控，必须限定在过错范围内"
+    },
+    "rule_data_002": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议：该数据安全合规要求可能超出行业标准，请评估实施成本并与甲方协商是否可降至等保二级或签署补充DPA。",
+        "fallback": "添加批注建议协商降低合规要求"
+      },
+      "rationale": "过高合规要求增加运营成本，建议协商"
+    },
+    "rule_service_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "包括但不限于",
+        "replacement_text": "包括",
+        "fallback": "删除开放式表述，明确列举服务范围"
+      },
+      "rationale": "开放式服务范围不可量化，必须明确界定"
+    },
+    "rule_service_002": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "甲方有权在提前 [{notice_days}] 日书面通知后进行审计，每年不超过 [{max_times}] 次",
+        "fallback": "为检查/审计权增加频率和提前通知限制"
+      },
+      "rationale": "无限制检查权可能干扰运营，建议增加合理限制"
+    },
+    "rule_payment_001": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "[{suggested_days}] 日",
+        "fallback": "协商缩短付款账期至60日内"
+      },
+      "rationale": "过长账期影响现金流，建议协商缩短"
+    },
+    "rule_payment_002": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "价格调整需经双方书面协商一致",
+        "fallback": "删除单方调价权，恢复双方协商机制"
+      },
+      "rationale": "单方调价权使收入不确定，必须改为双方协商"
+    },
+    "rule_term_001": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "合同期满前 [{notice_days}] 日，任何一方可书面通知不续约",
+        "fallback": "增加提前通知不续约的机制"
+      },
+      "rationale": "自动续约可能导致被动陷入不利关系，建议增加退出机制"
+    },
+    "rule_term_002": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "甲方仅在乙方发生重大违约时有权终止合同",
+        "fallback": "将单方任意终止权限定在重大违约情形"
+      },
+      "rationale": "无理由单方终止使投入无法回收，必须限定终止条件"
+    },
+    "rule_term_003": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议：竞业限制条款超出本合同范围，建议另行签署竞业协议并约定合理补偿。",
+        "fallback": "添加批注建议将竞业限制单独协议化"
+      },
+      "rationale": "竞业限制影响与其他客户合作，建议单独协议化"
+    },
+    "rule_jurisdiction_001": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "[{neutral_location}，如北京/上海/双方协商确定的地点]",
+        "fallback": "将争议解决地点改为中立地点"
+      },
+      "rationale": "对方所在地管辖增加诉讼成本，建议改为中立地点"
+    },
+    "rule_service_003": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "按双方另行约定的价格提供",
+        "fallback": "删除免费义务表述，改为另行约定"
+      },
+      "rationale": "免费义务增加成本，建议改为另行收费或删除"
+    },
+    "nda_def_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "以书面形式明确标记为'保密'的信息，或口头披露后在 [{days}] 日内书面确认的信息",
+        "fallback": "缩小保密信息定义范围，增加标记和确认要求"
+      },
+      "rationale": "过宽定义使日常信息被纳入保密范围，必须缩小"
+    },
+    "nda_def_002": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "不使用除公开信息以外的保密信息",
+        "fallback": "删除'不得使用任何'等记忆条款表述"
+      },
+      "rationale": "残余记忆条款实际无法履行，必须修改"
+    },
+    "nda_obl_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "双方各自承担保密义务",
+        "fallback": "将单方保密义务改为双方互负保密义务"
+      },
+      "rationale": "单方保密义务权利义务不对等，必须改为双向义务"
+    },
+    "nda_obl_002": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议：保密标准超出行业通行水平，请确认是否有额外费用补偿或可否降至'合理努力'标准。",
+        "fallback": "添加批注建议协商降低标准"
+      },
+      "rationale": "过高标准实际难以达成，建议协商"
+    },
+    "nda_obl_003": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "经披露方事先书面同意后可向顾问/代理披露",
+        "fallback": "为第三方披露增加事先书面同意要求"
+      },
+      "rationale": "过多披露对象增加风险，建议增加同意机制"
+    },
+    "nda_term_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "自披露之日起 [{years}] 年",
+        "fallback": "将永久保密改为有期限保密（建议3-5年）"
+      },
+      "rationale": "永久保密超出合理范围，必须设定期限"
+    },
+    "nda_term_002": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "[{suggested_years}] 年",
+        "fallback": "协商缩短保密期限至3-5年"
+      },
+      "rationale": "过长保密期限不合行业惯例，建议缩短"
+    },
+    "nda_ret_001": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "返还或销毁保密信息，但乙方可保留法律要求保存的备份副本",
+        "fallback": "增加法律保留例外"
+      },
+      "rationale": "未考虑法律保留需求，建议增加例外"
+    },
+    "nda_rem_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "申请禁止令需提供相应担保，并证明实际损害",
+        "fallback": "删除无需担保和推定损害表述"
+      },
+      "rationale": "无需担保禁止令和推定损害对乙方极为不利，必须修改"
+    },
+    "nda_rem_002": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "按实际损失赔偿",
+        "fallback": "删除固定违约金，改为按实际损失计算"
+      },
+      "rationale": "固定违约金可能导致轻微违约承担过重责任，建议调整"
+    },
+    "nda_ip_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "强烈建议：NDA中不应涉及知识产权归属条款。如确有必要，请另行签署知识产权协议，明确区分保密义务与IP转让。",
+        "fallback": "添加批注警示IP归属条款风险"
+      },
+      "rationale": "NDA中混入IP归属条款混淆法律关系，必须警示"
+    },
+    "nda_ip_002": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议：反向工程限制超出NDA合理范围。如确有必要限制，请在正式技术许可协议中约定。",
+        "fallback": "添加批注建议将反向工程限制移至技术协议"
+      },
+      "rationale": "NDA中加入反向工程限制超出范围，建议调整"
+    },
+    "nda_noncompete_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "强烈建议：NDA中混入竞业限制/非招揽条款超出保密协议范围，可能因缺乏对价而被认定无效。建议删除或另行签署竞业协议。",
+        "fallback": "添加批注警示竞业限制条款风险"
+      },
+      "rationale": "NDA中混入竞业限制条款可能无效且增加法律风险"
+    },
+    "nda_jurisdiction_001": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "[{neutral_location}]",
+        "fallback": "将争议解决地点改为中立地点"
+      },
+      "rationale": "对方所在地增加应诉成本，建议改为中立地点"
+    },
+    "nda_warranty_001": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议：NDA中加入保证条款增加了乙方的审查义务。建议确认是否必要，或改为'据其所知'的限定性表述。",
+        "fallback": "添加批注建议评估保证条款必要性"
+      },
+      "rationale": "NDA中加入保证条款增加审查义务，建议评估必要性"
+    },
+    "rule_template_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "责任上限为合同总金额的 [{cap_percentage}%]",
+        "fallback": "在违约责任条款中增加责任上限"
+      },
+      "rationale": "模板中存在无限赔偿责任，必须增加上限保护"
+    },
+    "rule_template_002": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "仅在重大违约时方可终止",
+        "fallback": "将任意解除权限定在重大违约情形"
+      },
+      "rationale": "任意解除权使权利义务失衡，必须限定"
+    },
+    "rule_template_003": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "包括但不限于",
+        "replacement_text": "包括",
+        "fallback": "删除开放式表述，明确列举范围"
+      },
+      "rationale": "宽泛定义导致义务范围不可量化，建议明确"
+    },
+    "rule_template_004": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "责任上限为 [{amount}]",
+        "fallback": "在违约责任中明确责任上限"
+      },
+      "rationale": "排除责任限制使风险敞口无限，必须增加上限"
+    },
+    "gen_high_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "乙方保留交付物中的背景知识产权和通用方法论的所有权，仅授予甲方非排他的、不可转让的使用许可",
+        "fallback": "在知识产权条款中增加乙方保留背景IP的但书"
+      },
+      "rationale": "知识产权完全归甲方使乙方丧失后续使用权，必须保留背景IP"
+    },
+    "gen_high_002": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "乙方承担的责任总额不超过合同总金额的 [{suggested_cap}% / 具体金额]",
+        "fallback": "增加责任上限保护条款"
+      },
+      "rationale": "责任上限被取消导致乙方赔偿风险敞口无限，必须恢复上限"
+    },
+    "gen_high_003": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "基于过错程度承担相应责任",
+        "fallback": "删除无过错责任表述，恢复过错责任原则"
+      },
+      "rationale": "无过错责任要求乙方为不可控因素担责，必须修改为过错责任"
+    },
+    "gen_high_004": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "甲方仅可在乙方严重违约或不可抗力导致无法继续履行时终止合同，并应提前 [30] 日书面通知",
+        "fallback": "增加甲方终止合同的前提条件和通知期"
+      },
+      "rationale": "甲方任意终止权使乙方投入无法回收，必须限定终止条件"
+    },
+    "gen_high_005": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "违约金不超过实际损失的 [{比例}%]，且不超过合同总金额的 [{上限}%]",
+        "fallback": "将固定违约金改为与实际损失挂钩的合理比例"
+      },
+      "rationale": "过高固定违约金使轻微违约承担过重责任，必须改为合理比例"
+    },
+    "gen_high_006": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "按已实际履行的服务比例结算，已交付部分不予返还",
+        "fallback": "删除全额返还要求，改为按履行比例结算"
+      },
+      "rationale": "全额返还有效否定已履行价值，必须改为比例结算"
+    },
+    "gen_high_007": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "甲方行使抵扣权前应书面通知乙方并给乙方 [15] 日异议期",
+        "fallback": "增加抵扣前置通知和异议期"
+      },
+      "rationale": "单方抵扣权剥夺乙方申辩机会，必须增加通知和异议程序"
+    },
+    "gen_high_008": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "承担因乙方重大过失或故意行为导致的第三方索赔",
+        "fallback": "将第三方索赔限定在乙方过错范围内"
+      },
+      "rationale": "承担全部第三方索赔不可控，必须限定在过错范围内"
+    },
+    "gen_high_009": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "自合同终止之日起 [3] 年内有效",
+        "fallback": "将永久/无限期义务改为固定年限"
+      },
+      "rationale": "永久义务形成长期不可控风险，必须设定期限"
+    },
+    "gen_high_010": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "价格调整须经双方书面协商一致",
+        "fallback": "删除单方调价权，改为双方协商"
+      },
+      "rationale": "单方调价权使收入不确定性大增，必须改为双方协商"
+    },
+    "gen_high_011": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "乙方不承担连带责任，担保范围以本合同为限",
+        "fallback": "删除连带责任条款"
+      },
+      "rationale": "连带责任超出自身过错范围，必须删除"
+    },
+    "gen_high_012": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "乙方有权将匿名化后的数据用于内部模型训练和产品改进，但不得向第三方披露甲方可识别信息",
+        "fallback": "在禁止条款中增加内部训练例外"
+      },
+      "rationale": "完全禁止模型训练限制AI公司核心能力，必须保留内部训练权"
+    },
+    "gen_high_013": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "甲方享有其提供原始数据的所有权，乙方享有基于该数据生成的分析成果和衍生数据的所有权",
+        "fallback": "区分原始数据与衍生数据的所有权"
+      },
+      "rationale": "数据所有权完全归甲方使乙方丧失成果权，必须区分归属"
+    },
+    "gen_high_014": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "乙方已有的背景知识产权和现有技术不在转让范围内，甲方仅获得本合同项下的使用许可",
+        "fallback": "明确排除背景IP的转让义务"
+      },
+      "rationale": "要求转让已有背景IP超出合理范围，必须排除"
+    },
+    "gen_high_015": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "违约触发标准应客观可量化，乙方在收到书面通知后 [15] 日内有补救机会",
+        "fallback": "提高违约触发门槛并增加补救期"
+      },
+      "rationale": "触发标准过低使乙方极易被认定违约，必须增加客观性和补救机会"
+    },
+    "gen_high_016": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议补充定义\"工作成果\"\"背景技术\"\"衍生作品\"等术语，否则IP归属例外条款可能因定义缺失导致乙方IP实际被转移。",
+        "fallback": "添加批注要求补充关键术语定义"
+      },
+      "rationale": "定义缺失使IP归属例外条款产生歧义风险，必须通过批注要求补充"
+    },
+    "gen_high_017": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "赔偿金额以实际直接损失为限，不包括惩罚性赔偿",
+        "fallback": "删除惩罚性赔偿条款"
+      },
+      "rationale": "惩罚性赔偿远超实际损失，必须删除或限定"
+    },
+    "gen_high_018": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "甲方单方解除合同的，应按已履行比例支付对应款项，利息按银行同期存款利率计算",
+        "fallback": "限定利息为银行存款利率"
+      },
+      "rationale": "解约利息加重乙方负担，必须限定利率和结算方式"
+    },
+    "gen_med_001": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "包括但不限于",
+        "replacement_text": "包括",
+        "fallback": "删除开放式表述，明确列举范围"
+      },
+      "rationale": "开放式范围不可量化，建议删除\"不限于\""
+    },
+    "gen_med_002": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议限定审计频率为每年不超过 [1] 次，并提前 [30] 日书面通知，避免干扰正常运营。",
+        "fallback": "添加批注建议限制审计频率和提前通知期"
+      },
+      "rationale": "无限制的检查/审计权可能干扰运营，建议协商限制"
+    },
+    "gen_med_003": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "甲方应在收到合格发票后 [30] 日内付款",
+        "fallback": "将付款账期缩短至30日"
+      },
+      "rationale": "过长账期影响现金流，建议缩短"
+    },
+    "gen_med_004": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议删除自动续约条款，或改为合同到期前 [30] 日双方书面确认是否续约，避免被动陷入不利关系。",
+        "fallback": "添加批注建议删除自动续约"
+      },
+      "rationale": "自动续约可能导致被动续约，建议改为双方确认"
+    },
+    "gen_med_005": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议限定竞业限制期限为 [1] 年，地域范围为 [中国大陆]，并约定合理补偿（不低于离职前12个月平均工资的 [30]%）。",
+        "fallback": "添加批注建议缩窄竞业限制范围"
+      },
+      "rationale": "竞业限制限制与其他客户合作，建议限定范围并约定补偿"
+    },
+    "gen_med_006": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "乙方按双方另行约定的价格提供",
+        "fallback": "删除\"免费\"要求，改为另行议价"
+      },
+      "rationale": "免费义务增加成本，建议改为有偿"
+    },
+    "gen_med_007": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议协商将数据安全合规要求降至等保二级或签署补充DPA，避免超出行业标准增加运营成本。",
+        "fallback": "添加批注建议降低合规要求"
+      },
+      "rationale": "过高合规要求增加成本，建议协商降至行业标准"
+    },
+    "gen_med_008": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议将争议管辖地改为被告所在地或双方协商确定，降低应诉成本。",
+        "fallback": "添加批注建议修改管辖地"
+      },
+      "rationale": "对方所在地管辖增加应诉成本，建议协商修改"
+    },
+    "gen_med_009": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议删除招聘限制条款，或限定为不得主动招聘对方在职高管（且需支付合理补偿）。",
+        "fallback": "添加批注建议删除招聘限制"
+      },
+      "rationale": "招聘限制缺乏对价可能无效，建议删除或限定"
+    },
+    "gen_med_010": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议明确配合义务的范围、时间上限和费用承担方，避免资源被无限占用。",
+        "fallback": "添加批注建议明确配合义务边界"
+      },
+      "rationale": "模糊配合义务可能导致资源占用，建议明确边界"
+    },
+    "gen_med_011": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议将声誉保护限定为不得发布恶意诽谤或不实信息，避免限制正当商业评价。",
+        "fallback": "添加批注建议缩小声誉保护范围"
+      },
+      "rationale": "主观声誉标准可能限制正当言论，建议限定为恶意诽谤"
+    },
+    "gen_med_012": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议将\"乙方保证\"改为\"据乙方所知，乙方保证\"，降低绝对陈述带来的违约风险。",
+        "fallback": "添加批注建议加入\"据乙方所知\"限定"
+      },
+      "rationale": "绝对陈述保证扩大违约面，建议加入知识限定"
+    },
+    "gen_med_013": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议将保密/安全标准降至行业通用水平（如等保二级），避免设定难以实际达成的标准。",
+        "fallback": "添加批注建议降低保密标准"
+      },
+      "rationale": "过高保密标准难以达成，建议降至行业水平"
+    },
+    "gen_med_014": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议明确删除期限为合同终止后 [30] 日内，并排除法律保留义务和备份需求。",
+        "fallback": "添加批注建议限定删除义务范围"
+      },
+      "rationale": "过重删除义务未考虑法律保留，建议限定"
+    },
+    "gen_med_015": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "关联方指直接或间接持有对方 [50]% 以上股权或表决权的实体",
+        "fallback": "缩窄关联方定义"
+      },
+      "rationale": "过宽关联方定义导致不可控主体连带责任，建议缩窄"
+    },
+    "gen_med_016": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议删除保证金/保函要求，或改为履约保函并限定金额不超过合同总额的 [10]%。",
+        "fallback": "添加批注建议删除或降低保证金"
+      },
+      "rationale": "保证金占用资金增加成本，建议删除或降低"
+    },
+    "gen_med_017": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议删除甲方单方确认付款条件，改为客观验收标准（如收到发票后固定天数内付款）。",
+        "fallback": "添加批注建议改为客观付款条件"
+      },
+      "rationale": "单方确认可能导致付款拖延，建议改为客观标准"
+    },
+    "gen_med_018": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议删除责任上限排除条款，保持责任上限的一致保护，避免上限在关键情形下水失效。",
+        "fallback": "添加批注建议删除排除条款"
+      },
+      "rationale": "排除条款使责任上限保护缩水，建议删除"
+    },
+    "gen_med_019": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "保密义务自披露之日起 [3] 年有效",
+        "fallback": "将保密期限缩短至3年"
+      },
+      "rationale": "过长保密期限超出行业惯例，建议缩短"
+    },
+    "gen_med_020": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议允许乙方将非核心服务分包，但需对分包商行为承担责任，以提高资源调配灵活性。",
+        "fallback": "添加批注建议允许分包"
+      },
+      "rationale": "禁止分包限制资源调配，建议允许非核心分包"
+    },
+    "gen_med_021": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议将通知时限延长至 [7] 个工作日，并允许通过电子邮件发送通知，降低履行难度。",
+        "fallback": "添加批注建议放宽通知要求"
+      },
+      "rationale": "过重通知义务难以履行，建议放宽时限和形式"
+    },
+    "gen_med_022": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议将赔偿范围限定为直接损失，排除间接损失、预期利益和利润损失，降低潜在赔偿额。",
+        "fallback": "添加批注建议缩窄赔偿范围"
+      },
+      "rationale": "赔偿范围扩大增加潜在赔偿额，建议限定为直接损失"
+    },
+    "gen_med_023": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "本条款仅适用于合同生效后的行为",
+        "fallback": "删除溯及力条款"
+      },
+      "rationale": "溯及既往义务使历史行为被追责，建议限定为合同生效后"
+    },
+    "gen_med_024": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议允许为兼容性测试、安全研究等合法目的的反向工程，避免过度限制技术自主。",
+        "fallback": "添加批注建议增加反向工程例外"
+      },
+      "rationale": "绝对禁止反向工程限制技术自主，建议增加合法目的例外"
+    },
+    "gen_med_025": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议将知识产权保证改为\"据乙方所知\"保证，并增加\"收到第三方侵权通知后及时告知\"的前置条件。",
+        "fallback": "添加批注建议加入知识限定"
+      },
+      "rationale": "绝对IP保证扩大审查义务，建议加入知识限定"
+    },
+    "gen_med_026": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "建议评估数据本地化成本，协商允许在符合中国数据安全法前提下的必要跨境传输，避免架构受限。",
+        "fallback": "添加批注建议协商数据出境"
+      },
+      "rationale": "数据出境限制可能影响全球架构，建议协商例外"
+    },
+    "gen_low_001": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "确认：该条款为乙方增设免责情形，对我方有利，建议保留。",
+        "fallback": "添加批注确认保留有利条款"
+      },
+      "rationale": "乙方免责条款对我方有利，无需修改"
+    },
+    "gen_low_002": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "确认：术语定义细化有助于明确权利义务范围，为中性修订，可接受。",
+        "fallback": "添加批注确认定义细化可接受"
+      },
+      "rationale": "定义条款细化为中性修订，可接受"
+    },
+    "gen_low_003": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "确认：联系方式/地址更新为程序性修订，核实信息准确性即可。",
+        "fallback": "添加批注确认程序性更新"
+      },
+      "rationale": "联系方式更新无实质风险"
+    },
+    "gen_low_004": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "确认：签署信息更新为程序性修订，核实日期逻辑一致性即可。",
+        "fallback": "添加批注确认程序性更新"
+      },
+      "rationale": "签署信息更新无实质风险"
+    },
+    "gen_low_005": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "确认：纯格式/标点调整为无实质影响的修订，可接受。",
+        "fallback": "添加批注确认格式调整可接受"
+      },
+      "rationale": "纯格式调整无实质影响"
+    }
+  },
+  "default_action": {
+    "disposition": "negotiable",
+    "action": {
+      "type": "add_comment",
+      "comment_text": "建议：该条款存在风险，请评估是否需要修改。",
+      "fallback": "添加风险提示批注"
+    }
+  },
+  "llm_review_triggers": {
+    "preliminary_risk_high": "必须生成 write_plan 项",
+    "preliminary_risk_medium": "生成 write_plan 项，disposition 通常为 negotiable",
+    "preliminary_risk_low": "跳过，不生成 write_plan 项",
+    "preliminary_risk_unknown": "交由 LLM 判断，如 LLM 认为需修改则生成 write_plan 项"
+  }
+}

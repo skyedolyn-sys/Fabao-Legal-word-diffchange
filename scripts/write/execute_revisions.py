@@ -1,0 +1,466 @@
+#!/usr/bin/env python3
+"""
+Kimi法宝 — 修订执行器（Post-Processing Step 7）
+
+读取 write_plan.json，在原始 DOCX 中执行 track changes 写入和批注注入。
+
+执行流程：
+  1. 加载 write_plan.json + 原始 docx
+  2. 前置校验（文本存在性、作者约束）
+  3. 同步 revision_id / comment_id 起始值
+  4. 逐项执行 action
+  5. 保存文档（自动备份）
+  6. 后置验证（重新分析输出文档）
+
+Usage:
+    python execute_revisions.py <write_plan.json> <input.docx> [output.docx] [--author "Moonshot Legal"]
+"""
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+# 将 lib/ 加入路径
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "lib"))
+
+from docx_operator import DocxOperator, NAMESPACES
+from revision_builder import RevisionBuilder
+from comment_injector import CommentInjector
+from validators import DocumentValidator
+
+W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
+
+def load_json(path: str) -> dict:
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+class RevisionExecutor:
+    """执行 write_plan 中的写入操作。"""
+
+    def __init__(self, docx_path: str, author: str = "Moonshot Legal"):
+        self.op = DocxOperator(docx_path)
+        self.builder = RevisionBuilder(author=author)
+        self.injector = CommentInjector(author=author)
+        self.validator = DocumentValidator(self.op)
+        self.author = author
+        self.results = []
+
+        # 同步起始 id，避免与文档中已有修订/批注冲突
+        self._sync_ids()
+
+    def _sync_ids(self) -> None:
+        """扫描文档中已有的修订和批注，设置起始 id。"""
+        doc_root = self.op.get_document()
+        max_rev_id = self.builder.find_max_revision_id(doc_root)
+        self.builder.set_start_id(max_rev_id)
+
+        comments_root = self.op.get_comments()
+        max_comment_id = self.injector.find_max_comment_id(comments_root)
+        self.injector.set_start_id(max_comment_id + 1)
+
+    def execute(self, write_plan: dict, dry_run: bool = False) -> dict:
+        """
+        执行完整的 write_plan。
+
+        Args:
+            write_plan: write_plan.json 内容。
+            dry_run: 如为 True，只校验不实际写入。
+
+        Returns:
+            执行结果报告 dict。
+        """
+        items = write_plan.get("items", [])
+        executed = 0
+        skipped = 0
+        failed = 0
+
+        for item in items:
+            item_id = item.get("id", "unknown")
+            action = item.get("action", {})
+            engine_ref = item.get("engine_ref", {})
+            disposition = item.get("disposition", "negotiable")
+
+            result = {
+                "item_id": item_id,
+                "status": "pending",
+                "error": None,
+            }
+
+            # 跳过状态为 skipped 的项
+            if item.get("status") == "skipped":
+                result["status"] = "skipped"
+                self.results.append(result)
+                skipped += 1
+                continue
+
+            # 前置校验
+            location_hint = engine_ref.get("location", "")
+            feasible, error_msg = self.validator.check_action_feasibility(action, location_hint)
+            if not feasible:
+                result["status"] = "failed"
+                result["error"] = f"前置校验失败: {error_msg}"
+                self.results.append(result)
+                failed += 1
+                continue
+
+            if dry_run:
+                result["status"] = "dry_run_ok"
+                self.results.append(result)
+                executed += 1
+                continue
+
+            # 执行写入
+            try:
+                ok, exec_msg = self._execute_action(action, location_hint)
+                if ok:
+                    result["status"] = "executed"
+                    executed += 1
+                else:
+                    result["status"] = "failed"
+                    result["error"] = exec_msg
+                    failed += 1
+            except Exception as e:
+                result["status"] = "failed"
+                result["error"] = f"执行异常: {str(e)}"
+                failed += 1
+
+            self.results.append(result)
+
+        return {
+            "total": len(items),
+            "executed": executed,
+            "skipped": skipped,
+            "failed": failed,
+            "items": self.results,
+        }
+
+    def _execute_action(self, action: dict, location_hint: str) -> tuple[bool, str]:
+        """执行单个 action。"""
+        action_type = action.get("type")
+
+        if action_type == "replace_in_text":
+            return self._do_replace_in_text(action, location_hint)
+        elif action_type == "replace_in_revision":
+            return self._do_replace_in_revision(action, location_hint)
+        elif action_type == "delete_text":
+            return self._do_delete_text(action, location_hint)
+        elif action_type == "add_comment":
+            return self._do_add_comment(action, location_hint)
+        elif action_type == "insert_after_paragraph":
+            return self._do_insert_after_paragraph(action, location_hint)
+        elif action_type == "append_to_paragraph":
+            return self._do_append_to_paragraph(action, location_hint)
+        else:
+            return False, f"未知的 action 类型: {action_type}"
+
+    # ------------------------------------------------------------------
+    # 具体 Action 实现
+    # ------------------------------------------------------------------
+
+    def _find_target_paragraph(self, text: str, location_hint: str = "") -> tuple[ET.Element | None, int]:
+        """
+        查找包含目标文本的段落。
+
+        策略：
+        1. 先精确匹配
+        2. 再规范化匹配（去除多余空白）
+        3. 如果有多个匹配，优先选择与 location_hint 相关的段落
+
+        Returns:
+            (段落元素, 段落索引) 或 (None, -1)
+        """
+        paragraphs = self.op.get_paragraphs()
+        candidates = []
+
+        for idx, para in enumerate(paragraphs):
+            para_text = self.op.get_paragraph_text(para)
+            if text in para_text:
+                candidates.append((para, idx, para_text, 2))  # 精确匹配优先级2
+            elif _normalize(text) in _normalize(para_text):
+                candidates.append((para, idx, para_text, 1))  # 规范化匹配优先级1
+
+        if not candidates:
+            return None, -1
+
+        if len(candidates) == 1:
+            return candidates[0][0], candidates[0][1]
+
+        # 多个匹配：优先选择与 location_hint 相关的
+        if location_hint:
+            norm_hint = _normalize(location_hint)
+            for para, idx, para_text, priority in candidates:
+                if norm_hint in _normalize(para_text):
+                    return para, idx
+
+        # 仍有多匹配，选第一个
+        return candidates[0][0], candidates[0][1]
+
+    def _do_replace_in_text(self, action: dict, location_hint: str) -> tuple[bool, str]:
+        """将 old_text 替换为 new_text（通过 del + ins），保留 run 内前缀/后缀文本。"""
+        old_text = action.get("original_text", "")
+        new_text = action.get("replacement_text", "")
+
+        para, idx = self._find_target_paragraph(old_text, location_hint)
+        if para is None:
+            return False, f"未找到包含原文的段落: '{old_text[:60]}...'"
+
+        # 在段落中查找并替换
+        children = list(para)
+        for i, child in enumerate(children):
+            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if tag == "r":
+                t = child.find(f"{W}t")
+                if t is not None and t.text and old_text in t.text:
+                    full_text = t.text
+                    pos = full_text.index(old_text)
+                    prefix = full_text[:pos]
+                    suffix = full_text[pos + len(old_text):]
+
+                    para.remove(child)
+                    insert_pos = i
+
+                    # 保留前缀 run
+                    if prefix:
+                        prefix_r = self.builder.create_run(prefix)
+                        para.insert(insert_pos, prefix_r)
+                        insert_pos += 1
+
+                    # del + ins
+                    del_el = self.builder.create_del(old_text)
+                    ins_el = self.builder.create_ins(new_text)
+                    para.insert(insert_pos, del_el)
+                    insert_pos += 1
+                    para.insert(insert_pos, ins_el)
+                    insert_pos += 1
+
+                    # 保留后缀 run
+                    if suffix:
+                        suffix_r = self.builder.create_run(suffix)
+                        para.insert(insert_pos, suffix_r)
+
+                    return True, ""
+
+        # 文本可能在多个 runs 中分散
+        para_text = self.op.get_paragraph_text(para)
+        if old_text in para_text:
+            del_el = self.builder.create_del(old_text)
+            ins_el = self.builder.create_ins(new_text)
+            para.append(del_el)
+            para.append(ins_el)
+            return True, f"警告：文本分散在多个 runs 中，已在段落末尾追加修订标记（段落 {idx}）"
+
+        return False, f"在段落中未找到可替换的文本: '{old_text[:60]}...'"
+
+    def _do_replace_in_revision(self, action: dict, location_hint: str) -> tuple[bool, str]:
+        """修改已有修订中的文本（较复杂，先实现简化版）。"""
+        # 简化版：等同于 replace_in_text
+        return self._do_replace_in_text(action, location_hint)
+
+    def _do_delete_text(self, action: dict, location_hint: str) -> tuple[bool, str]:
+        """将文本包装为删除修订，保留 run 内前缀/后缀文本。"""
+        old_text = action.get("original_text", "")
+
+        para, idx = self._find_target_paragraph(old_text, location_hint)
+        if para is None:
+            return False, f"未找到包含原文的段落: '{old_text[:60]}...'"
+
+        children = list(para)
+        for i, child in enumerate(children):
+            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if tag == "r":
+                t = child.find(f"{W}t")
+                if t is not None and t.text == old_text:
+                    # 完全匹配，替换为 del
+                    del_el = self.builder.create_del(old_text)
+                    para.remove(child)
+                    para.insert(i, del_el)
+                    return True, ""
+                if t is not None and t.text and old_text in t.text:
+                    # 部分匹配，保留前缀/后缀
+                    full_text = t.text
+                    pos = full_text.index(old_text)
+                    prefix = full_text[:pos]
+                    suffix = full_text[pos + len(old_text):]
+
+                    para.remove(child)
+                    insert_pos = i
+
+                    if prefix:
+                        prefix_r = self.builder.create_run(prefix)
+                        para.insert(insert_pos, prefix_r)
+                        insert_pos += 1
+
+                    del_el = self.builder.create_del(old_text)
+                    para.insert(insert_pos, del_el)
+                    insert_pos += 1
+
+                    if suffix:
+                        suffix_r = self.builder.create_run(suffix)
+                        para.insert(insert_pos, suffix_r)
+
+                    return True, ""
+
+        return False, f"在段落中未找到精确匹配的文本: '{old_text[:60]}...'"
+
+    def _do_add_comment(self, action: dict, location_hint: str) -> tuple[bool, str]:
+        """添加段落级批注。"""
+        comment_text = action.get("comment_text", "")
+        target_text = action.get("target_text", "")
+
+        # 确定目标段落
+        if target_text:
+            para, idx = self._find_target_paragraph(target_text, location_hint)
+        elif location_hint:
+            para, idx = self._find_target_paragraph(location_hint, location_hint)
+        else:
+            # 无目标，添加到第一个非空段落
+            for p in self.op.get_paragraphs():
+                if self.op.get_paragraph_text(p).strip():
+                    para = p
+                    break
+            else:
+                return False, "文档中无可用段落"
+            idx = -1
+
+        if para is None:
+            return False, "未找到目标段落"
+
+        comment_id = self.injector.add_paragraph_comment(
+            self.op, para, comment_text, target_text=target_text or None
+        )
+        return True, f"批注 id={comment_id}"
+
+    def _do_insert_after_paragraph(self, action: dict, location_hint: str) -> tuple[bool, str]:
+        """在目标段落后插入新段落（带插入修订）。"""
+        target_text = action.get("target_text", "")
+        insertion_text = action.get("insertion_text", "")
+
+        if not target_text:
+            # 无目标段落，在文档末尾插入
+            body = self.op.get_body()
+            new_para = self.builder.create_paragraph_with_ins(insertion_text)
+            body.append(new_para)
+            return True, "已插入到文档末尾"
+
+        para, idx = self._find_target_paragraph(target_text, location_hint)
+        if para is None:
+            return False, f"未找到目标段落: '{target_text[:60]}...'"
+
+        body = self.op.get_body()
+        all_paras = list(body.iter(f"{W}p"))
+        try:
+            target_idx = all_paras.index(para)
+        except ValueError:
+            return False, "无法在文档结构中找到目标段落"
+
+        new_para = self.builder.create_paragraph_with_ins(insertion_text)
+        # 在 body 中 target_para 之后插入
+        body.insert(target_idx + 1, new_para)
+        return True, f"已插入到段落 {idx} 之后"
+
+    def _do_append_to_paragraph(self, action: dict, location_hint: str) -> tuple[bool, str]:
+        """在段落末尾追加文本（带插入修订）。"""
+        target_text = action.get("target_text", "")
+        append_text = action.get("append_text", "")
+
+        if target_text:
+            para, idx = self._find_target_paragraph(target_text, location_hint)
+        elif location_hint:
+            para, idx = self._find_target_paragraph(location_hint, location_hint)
+        else:
+            return False, "缺少 target_text 或 location_hint"
+
+        if para is None:
+            return False, "未找到目标段落"
+
+        ins_el = self.builder.create_ins(append_text)
+        para.append(ins_el)
+        return True, f"已追加到段落 {idx}"
+
+    def save(self, output_path: str | None = None) -> str:
+        """保存修改后的文档。"""
+        return self.op.save(output_path=output_path, backup=True)
+
+    def post_validate(self, expected_items: int) -> list[str]:
+        """后置验证。"""
+        return self.validator.validate_result(expected_items, self.author)
+
+
+def run_analyze_revisions(docx_path: str, playbook: str | None = None) -> dict:
+    """调用 analyze_revisions.py 分析文档。"""
+    script_dir = Path(__file__).resolve().parent.parent
+    script = script_dir / "analyze_revisions.py"
+
+    cmd = [sys.executable, str(script), docx_path]
+    if playbook:
+        cmd.extend(["--playbook", playbook])
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"analyze_revisions.py 失败: {result.stderr}")
+
+    return json.loads(result.stdout)
+
+
+def _normalize(text: str) -> str:
+    import re
+    return re.sub(r"\s+", " ", text.strip().lower())
+
+
+def main():
+    parser = argparse.ArgumentParser(description="执行 write_plan 到 DOCX")
+    parser.add_argument("write_plan", help="write_plan.json 路径")
+    parser.add_argument("input_docx", help="原始 DOCX 路径")
+    parser.add_argument("output_docx", nargs="?", help="输出 DOCX 路径（默认覆盖原文件）")
+    parser.add_argument("--author", default="Moonshot Legal", help="修订作者名")
+    parser.add_argument("--dry-run", action="store_true", help="只校验不写入")
+    parser.add_argument("--post-validate", action="store_true", help="执行后置验证")
+    args = parser.parse_args()
+
+    if not Path(args.write_plan).exists():
+        print(f"Error: write_plan 不存在: {args.write_plan}", file=sys.stderr)
+        sys.exit(1)
+    if not Path(args.input_docx).exists():
+        print(f"Error: input_docx 不存在: {args.input_docx}", file=sys.stderr)
+        sys.exit(1)
+
+    write_plan = load_json(args.write_plan)
+
+    executor = RevisionExecutor(args.input_docx, author=args.author)
+
+    print(f"开始执行 write_plan: {len(write_plan.get('items', []))} 项...")
+    result = executor.execute(write_plan, dry_run=args.dry_run)
+
+    print(f"\n执行结果:")
+    print(f"  总计: {result['total']}")
+    print(f"  成功: {result['executed']}")
+    print(f"  跳过: {result['skipped']}")
+    print(f"  失败: {result['failed']}")
+
+    if result['failed'] > 0:
+        print("\n失败项:")
+        for item in result['items']:
+            if item['status'] == 'failed':
+                print(f"  [{item['item_id']}] {item['error']}")
+
+    if not args.dry_run and result['executed'] > 0:
+        output = executor.save(output_path=args.output_docx)
+        print(f"\n文档已保存: {output}")
+
+        if args.post_validate:
+            print("\n后置验证...")
+            expected = result['executed']
+            errors = executor.post_validate(expected)
+            if errors:
+                for e in errors:
+                    print(f"  ⚠ {e}")
+            else:
+                print("  ✓ 后置验证通过")
+
+
+if __name__ == "__main__":
+    main()

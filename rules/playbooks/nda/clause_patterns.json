@@ -1,0 +1,122 @@
+{
+  "version": "1.0.0",
+  "description": "NDA-specific clause type classification patterns. Optimized for Non-Disclosure Agreement / Confidentiality Agreement revision review.",
+  "playbook_id": "nda",
+  "playbook_name": "保密协议(NDA)审阅Playbook",
+  "priority_order": [
+    "保密信息定义",
+    "保密义务",
+    "除外情形",
+    "允许披露",
+    "救济与违约",
+    "期限",
+    "信息返还",
+    "知识产权",
+    "协议结构",
+    "其他"
+  ],
+  "patterns": {
+    "保密信息定义": {
+      "keywords": [
+        "保密信息", "机密信息", "confidential information",
+        "披露", "信息定义", "信息的定义", "保密范围",
+        "口头信息", "书面信息", "电子形式", "标记",
+        "口头披露", "书面披露", "未标记", "unmarked",
+        "business secrets", "proprietary information"
+      ],
+      "priority": 1
+    },
+    "保密义务": {
+      "keywords": [
+        "保密义务", "obligations", "保密责任", "接收方义务",
+        "不得披露", "不得使用", "限制使用", "use restriction",
+        "need to know", "知悉需要", "合理保护", "reasonable care",
+        "至少同等保护", "at least as protective", "雇员保密",
+        "分包商保密", "affiliates", "关联公司"
+      ],
+      "priority": 2
+    },
+    "除外情形": {
+      "keywords": [
+        "除外", "例外", "exceptions", "carveouts", " carve-out",
+        "排除", "exclusions", "不视为保密", "not be considered",
+        "publicly available", "公知", "已公开", "独立开发",
+        "independently developed", "反向工程", "reverse engineering",
+        "rightfully obtained", "合法获得"
+      ],
+      "priority": 3
+    },
+    "允许披露": {
+      "keywords": [
+        "允许披露", "permitted disclosures", "required by law",
+        "法律要求", "法院命令", "政府要求", "监管机构",
+        "regulatory", "传票", "subpoena", "法律程序",
+        "法律诉讼", "强制披露", "compelled disclosure"
+      ],
+      "priority": 4
+    },
+    "救济与违约": {
+      "keywords": [
+        "救济", "remedies", "违约", "breach", "违约赔偿",
+        "损害赔偿", "damages", "禁止令", "injunction",
+        "禁令", "irreparable harm", "不可弥补的损害",
+        "特定履行", "specific performance", "律师费",
+        "attorneys fees", "无担保", "without bond"
+      ],
+      "priority": 5
+    },
+    "期限": {
+      "keywords": [
+        "期限", "term", "有效期", "存续期", "duration",
+        "生效", "effective date", "终止", "expiration",
+        "届满", "survival", "继续有效", "perpetual",
+        "永久", "indefinite", "自动终止", "自动延期"
+      ],
+      "priority": 6
+    },
+    "信息返还": {
+      "keywords": [
+        "返还", "return", "销毁", "destruction", "删除",
+        "deletion", "certification", "证明", "书面证明",
+        "销毁证明", "保留副本", "retain copies",
+        "法律保留", "legal hold", "备份"
+      ],
+      "priority": 7
+    },
+    "知识产权": {
+      "keywords": [
+        "知识产权", "intellectual property", "IP", "专利权",
+        "版权", "著作权", "商标", "背景IP", "许可",
+        "license", "不授予", "no license", "归属",
+        "ownership", " improvements", "改进"
+      ],
+      "priority": 8
+    },
+    "协议结构": {
+      "keywords": [
+        "定义", "definitions", "目的", "purpose",
+        "双方", "parties", "披露方", "接收方",
+        "disclosing party", "receiving party", "缔约方",
+        "代表", "representatives", "适用范围"
+      ],
+      "priority": 9
+    },
+    "其他": {
+      "keywords": [
+        "管辖", "jurisdiction", "法律适用", "governing law",
+        "转让", "assignment", "分包", "subcontracting",
+        "完整协议", "entire agreement", "修改", "amendment",
+        "通知", "notice", "可分割性", "severability",
+        "弃权", "waiver", "副本", "counterparts",
+        "语言", "language", "标题", "headings"
+      ],
+      "priority": 10
+    }
+  },
+  "matching": {
+    "strategy": "longest_match_first",
+    "case_sensitive": false,
+    "match_whole_word": false,
+    "fallback_type": "其他"
+  }
+}

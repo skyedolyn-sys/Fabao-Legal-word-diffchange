@@ -1,0 +1,24 @@
+#!/bin/bash
+# Kimi法宝 — 统一入口脚本
+#
+# 用法:
+#   kimi-fabao <input.docx> [output.json]
+#   kimi-fabao <input.docx> --playbook nda     # 使用 NDA 专用规则
+#   kimi-fabao <input.docx> --mode template    # 模板初筛模式（无修订标记）
+#
+# 安装:
+#   ln -s ~/.claude/skills/kimi-fabao/kimi-fabao ~/.local/bin/kimi-fabao
+
+set -e
+
+# 解析脚本所在目录（处理 symlink 情况）
+SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SCRIPT_SOURCE" ]; do
+    SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+    SCRIPT_SOURCE="$(readlink "$SCRIPT_SOURCE")"
+    [[ $SCRIPT_SOURCE != /* ]] && SCRIPT_SOURCE="$SCRIPT_DIR/$SCRIPT_SOURCE"
+done
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+
+# 调用分析引擎
+exec python3 "$SCRIPT_DIR/scripts/analyze_revisions.py" "$@"
