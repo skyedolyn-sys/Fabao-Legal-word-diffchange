@@ -12,6 +12,7 @@ Uses only standard library: zipfile, xml.etree, json
 """
 
 import json
+import re
 import sys
 import zipfile
 from xml.etree import ElementTree as ET
@@ -27,6 +28,362 @@ NAMESPACES = {
 # Register namespaces for proper parsing
 for prefix, uri in NAMESPACES.items():
     ET.register_namespace(prefix, uri)
+
+
+# ---------------------------------------------------------------------------
+# Word Auto-Numbering Resolver  (w:numPr → visible prefix)
+# ---------------------------------------------------------------------------
+
+def _chinese_counting(n: int) -> str:
+    """Convert integer to Chinese counting form (一二三...十一...二十一)."""
+    digits = "零一二三四五六七八九"
+    if n <= 0:
+        return str(n)
+    if n <= 10:
+        return digits[n]
+    if n <= 19:
+        return f"十{digits[n % 10]}" if n % 10 else "十"
+    if n <= 99:
+        t, o = divmod(n, 10)
+        return f"{digits[t]}十{digits[o] if o else ''}"
+    return str(n)  # > 99 fallback
+
+
+def _format_num(n: int, num_fmt: str) -> str:
+    """Format a number according to a Word numFmt value."""
+    if num_fmt in ("decimal", "decimalZero"):
+        return str(n)
+    if num_fmt in ("chineseCountingThousand", "chineseCounting",
+                   "ideographTraditional", "taiwaneseCounting"):
+        return _chinese_counting(n)
+    if num_fmt == "lowerLetter":
+        return chr(ord("a") + n - 1) if 1 <= n <= 26 else str(n)
+    if num_fmt == "upperLetter":
+        return chr(ord("A") + n - 1) if 1 <= n <= 26 else str(n)
+    if num_fmt == "lowerRoman":
+        vals = [(1000,"m"),(900,"cm"),(500,"d"),(400,"cd"),(100,"c"),
+                (90,"xc"),(50,"l"),(40,"xl"),(10,"x"),(9,"ix"),(5,"v"),(4,"iv"),(1,"i")]
+        r = ""
+        for v, s in vals:
+            while n >= v:
+                r += s; n -= v
+        return r
+    if num_fmt == "upperRoman":
+        return _format_num(n, "lowerRoman").upper()
+    if num_fmt == "none":
+        return ""
+    return str(n)
+
+
+class NumberingResolver:
+    """Resolve Word auto-numbering (w:numPr) to visible prefix text.
+
+    Reads word/numbering.xml and tracks sequential counters so that each
+    paragraph's numId + ilvl produces the correct rendered prefix
+    (e.g. "第一章", "1、", "（1）").
+    """
+
+    def __init__(self, zf: zipfile.ZipFile):
+        self._levels: dict[str, dict[str, dict]] = {}  # abstractNumId → {ilvl → def}
+        self._num_to_abstract: dict[str, str] = {}     # numId → abstractNumId
+        self._start_overrides: dict[str, dict[str, int]] = {}  # numId → {ilvl → start}
+        self._counters: dict[tuple[str, str], int] = {} # (numId, ilvl) → current count
+        self._last_ilvl: dict[str, int] = {}            # numId → last seen ilvl
+        self._parse(zf)
+
+    def _parse(self, zf: zipfile.ZipFile) -> None:
+        if "word/numbering.xml" not in zf.namelist():
+            return
+        W = NAMESPACES["w"]
+        with zf.open("word/numbering.xml") as f:
+            root = ET.parse(f).getroot()
+
+        # Parse abstractNum definitions
+        for abst in root.iter(f"{{{W}}}abstractNum"):
+            abst_id = abst.get(f"{{{W}}}abstractNumId")
+            lvl_map: dict[str, dict] = {}
+            for lvl in abst.iter(f"{{{W}}}lvl"):
+                ilvl = lvl.get(f"{{{W}}}ilvl")
+                start_el = lvl.find(f"w:start", NAMESPACES)
+                fmt_el = lvl.find(f"w:numFmt", NAMESPACES)
+                txt_el = lvl.find(f"w:lvlText", NAMESPACES)
+                suff_el = lvl.find(f"w:suff", NAMESPACES)
+                lvl_map[ilvl] = {
+                    "start": int(start_el.get(f"{{{W}}}val", "1")) if start_el is not None else 1,
+                    "numFmt": fmt_el.get(f"{{{W}}}val", "decimal") if fmt_el is not None else "decimal",
+                    "lvlText": txt_el.get(f"{{{W}}}val", "") if txt_el is not None else "",
+                    "suff": suff_el.get(f"{{{W}}}val", "tab") if suff_el is not None else "tab",
+                }
+            self._levels[abst_id] = lvl_map
+
+        # Parse num → abstractNum mappings + overrides
+        for num in root.iter(f"{{{W}}}num"):
+            num_id = num.get(f"{{{W}}}numId")
+            abst_ref = num.find(f"w:abstractNumId", NAMESPACES)
+            if abst_ref is not None:
+                self._num_to_abstract[num_id] = abst_ref.get(f"{{{W}}}val")
+            for ovr in num.iter(f"{{{W}}}lvlOverride"):
+                ovr_ilvl = ovr.get(f"{{{W}}}ilvl")
+                start_ovr = ovr.find(f"w:startOverride", NAMESPACES)
+                if start_ovr is not None:
+                    self._start_overrides.setdefault(num_id, {})[ovr_ilvl] = \
+                        int(start_ovr.get(f"{{{W}}}val", "1"))
+
+    @staticmethod
+    def _is_para_deleted(para: ET.Element) -> bool:
+        """True if the entire paragraph is deleted via track changes.
+
+        A paragraph is considered fully deleted when its paragraph mark
+        carries ``w:rsidDel`` **and** it contains no surviving ``w:t`` text
+        (all content is inside ``w:del`` / ``w:delText``).
+        """
+        W = NAMESPACES["w"]
+        if not para.get(f"{{{W}}}rsidDel"):
+            return False
+        # Any w:t outside w:del means partial deletion — still alive
+        for t in para.iter(f"{{{W}}}t"):
+            # Walk ancestors to check if inside w:del
+            node = t
+            inside_del = False
+            while node is not None:
+                if node.tag == f"{{{W}}}del":
+                    inside_del = True
+                    break
+                node = node.get("__parent__")  # ET has no parent; use fallback
+            if not inside_del:
+                return False
+        # Fallback: check if *any* plain w:t text exists
+        # (ET doesn't track parents, so use a simpler heuristic)
+        all_text = "".join((t.text or "") for t in para.iter(f"{{{W}}}t"))
+        del_text = "".join((t.text or "") for t in para.iter(f"{{{W}}}delText"))
+        return len(all_text) == 0 and len(del_text) > 0
+
+    def resolve(self, para: ET.Element) -> str | None:
+        """Return the rendered numbering prefix for a paragraph, or None.
+
+        Paragraphs that are entirely deleted (track changes) are skipped
+        without incrementing the counter, matching Word's Final-view
+        numbering.
+        """
+        W = NAMESPACES["w"]
+        pPr = para.find(f"w:pPr", NAMESPACES)
+        if pPr is None:
+            return None
+        numPr = pPr.find(f"w:numPr", NAMESPACES)
+        if numPr is None:
+            return None
+        ilvl_el = numPr.find(f"w:ilvl", NAMESPACES)
+        numId_el = numPr.find(f"w:numId", NAMESPACES)
+        if ilvl_el is None or numId_el is None:
+            return None
+        ilvl = ilvl_el.get(f"{{{W}}}val", "0")
+        num_id = numId_el.get(f"{{{W}}}val", "0")
+        if num_id == "0":  # numId 0 = no numbering
+            return None
+
+        abst_id = self._num_to_abstract.get(num_id)
+        if abst_id is None or abst_id not in self._levels:
+            return None
+        lvl_def = self._levels[abst_id].get(ilvl)
+        if lvl_def is None:
+            return None
+
+        # Skip entirely-deleted paragraphs — don't advance counter
+        if self._is_para_deleted(para):
+            return None
+
+        # Counter management: reset sub-levels when parent advances
+        ilvl_int = int(ilvl)
+        last = self._last_ilvl.get(num_id, -1)
+        if ilvl_int <= last:
+            # Parent or same level — reset deeper counters
+            for key in list(self._counters):
+                if key[0] == num_id and int(key[1]) > ilvl_int:
+                    del self._counters[key]
+        self._last_ilvl[num_id] = ilvl_int
+
+        # Determine start value
+        key = (num_id, ilvl)
+        if key not in self._counters:
+            start = self._start_overrides.get(num_id, {}).get(ilvl, lvl_def["start"])
+            self._counters[key] = start
+        else:
+            self._counters[key] += 1
+
+        # Format prefix from lvlText template (e.g. "第%1章", "%1、", "（%1）")
+        prefix = lvl_def["lvlText"]
+        # Replace %1, %2, etc. with formatted numbers
+        # %N refers to level N-1's current counter value
+        for i in range(9, 0, -1):  # %9 down to %1
+            placeholder = f"%{i}"
+            if placeholder in prefix:
+                target_ilvl = str(i - 1)
+                if target_ilvl == ilvl:
+                    val = self._counters[key]
+                else:
+                    val = self._counters.get((num_id, target_ilvl), 1)
+                prefix = prefix.replace(placeholder, _format_num(val, lvl_def["numFmt"]))
+
+        # Append suffix separator (tab→space, space→space, nothing→"")
+        suff = lvl_def.get("suff", "tab")
+        if suff != "nothing":
+            prefix += " "
+
+        return prefix
+
+
+# ---------------------------------------------------------------------------
+# Heading heuristic: regex patterns for Chinese/English contract numbering
+# ---------------------------------------------------------------------------
+_RE_ZHANG = re.compile(r'^第[一二三四五六七八九十百千\d]+章')          # 第X章
+_RE_TIAO = re.compile(r'^第[一二三四五六七八九十百千\d]+条')          # 第X条
+_RE_CN_ORDINAL = re.compile(r'^[一二三四五六七八九十]{1,3}[、，．.\s]')  # 一、
+_RE_CN_PAREN = re.compile(r'^[（(][一二三四五六七八九十]{1,3}[）)]')    # （一）
+_RE_ARABIC_ORDINAL = re.compile(r'^\d+[、，．.](?!\d)')      # 1、 2、 1. 2． (but NOT 1.1)
+_RE_DECIMAL = re.compile(r'^(\d+(?:\.\d+)+)')                         # 1.1 / 1.1.1
+_RE_ARTICLE = re.compile(
+    r'^Article\s+\d+',                                      # Article 1 …
+    re.IGNORECASE,
+)
+_RE_APPENDIX = re.compile(
+    r'^(附件[一二三四五六七八九十\d]|附录[一二三四五六七八九十\d]'
+    r'|Appendix\s*[A-Z\d]|Schedule\s*[A-Z\d]'
+    r'|Annex\s*[A-Z\d]|Exhibit\s*[A-Z\d])',
+    re.IGNORECASE,
+)
+
+
+def _scan_doc_patterns(paragraphs: list[dict]) -> dict:
+    """First pass: detect which numbering patterns exist in the document.
+
+    Returns a dict of boolean flags used by ``_guess_heading_level`` to
+    resolve level ambiguity (e.g. 第X条 is L1 when no 章, L2 when 章 exists).
+    """
+    pats: dict = {
+        "has_zhang": False,           # 第X章
+        "has_tiao": False,            # 第X条
+        "has_cn_ordinal": False,      # 一、
+        "has_arabic_ordinal": False,  # 1、 2、
+        "has_cn_paren": False,        # （一）
+        "has_decimal": False,         # X.X
+        "has_article": False,         # Article X
+        "has_heading_styles": False,  # Word heading styles
+        "has_any_numbering": False,
+    }
+    for p in paragraphs:
+        text = (p.get("text") or "").strip()
+        if not text:
+            continue
+        if p.get("heading_level", 0) > 0:
+            pats["has_heading_styles"] = True
+        if _RE_ZHANG.match(text):
+            pats["has_zhang"] = True
+        if _RE_TIAO.match(text):
+            pats["has_tiao"] = True
+        if _RE_CN_ORDINAL.match(text):
+            pats["has_cn_ordinal"] = True
+        if _RE_CN_PAREN.match(text):
+            pats["has_cn_paren"] = True
+        if _RE_ARABIC_ORDINAL.match(text):
+            pats["has_arabic_ordinal"] = True
+        if _RE_DECIMAL.match(text):
+            pats["has_decimal"] = True
+        if _RE_ARTICLE.match(text):
+            pats["has_article"] = True
+    pats["has_any_numbering"] = any([
+        pats["has_zhang"], pats["has_tiao"],
+        pats["has_cn_ordinal"], pats["has_arabic_ordinal"],
+        pats["has_decimal"], pats["has_cn_paren"],
+        pats["has_article"],
+    ])
+    return pats
+
+
+def _guess_heading_level(text: str, fmt: dict, doc_pats: dict) -> int:
+    """Guess heading level from text numbering patterns + visual formatting.
+
+    Rules:
+    * Numbered patterns (第X章 / 第X条 / 一、 / （一） / X.X) are always active.
+    * Bold-only fallback fires only when the document has NO numbered patterns.
+    * Returns 0 for body text, 1-4 for heading levels.
+    """
+    text = text.strip()
+    if not text:
+        return 0
+
+    # -- Numbered patterns (always active) --------------------------------
+
+    # 第X章 / Article X → always L1
+    if _RE_ZHANG.match(text):
+        return 1
+    if _RE_ARTICLE.match(text):
+        return 1
+
+    # 第X条 → L1 (no 章) / L2 (has 章)
+    if _RE_TIAO.match(text):
+        return 2 if doc_pats["has_zhang"] else 1
+
+    # 一、 → L1 / L2 / L3 depending on higher patterns
+    if _RE_CN_ORDINAL.match(text):
+        if doc_pats["has_zhang"] and doc_pats["has_tiao"]:
+            return 3
+        if doc_pats["has_zhang"] or doc_pats["has_tiao"]:
+            return 2
+        return 1
+
+    # （一）→ L2 / L3
+    if _RE_CN_PAREN.match(text):
+        if doc_pats["has_tiao"] or doc_pats["has_cn_ordinal"] or doc_pats["has_arabic_ordinal"]:
+            return 3
+        return 2
+
+    # X.X / X.X.X → L2 / L3  (count dots for depth)
+    m = _RE_DECIMAL.match(text)
+    if m:
+        dots = m.group(1).count(".")
+        base = 3 if (doc_pats["has_zhang"] or doc_pats["has_tiao"]) else 2
+        return min(base + dots - 1, 4)
+
+    # 1、 / 2、 (Arabic ordinal + separator) — same level logic as 一、
+    if _RE_ARABIC_ORDINAL.match(text):
+        if doc_pats["has_zhang"] and doc_pats["has_tiao"]:
+            return 3
+        if doc_pats["has_zhang"] or doc_pats["has_tiao"]:
+            return 2
+        return 1
+
+    # 附件X → L1 (always, regardless of formatting)
+    if _RE_APPENDIX.match(text):
+        return 1
+
+    # -- Bold fallback (only when NO numbering patterns in whole doc) -----
+    if not doc_pats["has_any_numbering"]:
+        is_bold = fmt.get("bold", False)
+        is_center = fmt.get("align") == "center"
+        has_colon = "：" in text or ":" in text
+        if is_bold and not is_center and not has_colon and len(text) <= 25:
+            return 1
+
+    return 0
+
+
+def _separate_appendices(clauses: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Split clause tree into main body and appendices.
+
+    Once an appendix title is encountered (附件X / Appendix X / etc.),
+    everything from that point onward is treated as appendix content.
+    """
+    main: list[dict] = []
+    appendices: list[dict] = []
+    in_appendix = False
+    for clause in clauses:
+        if not in_appendix and _RE_APPENDIX.match(clause.get("title", "").strip()):
+            in_appendix = True
+        if in_appendix:
+            appendices.append(clause)
+        else:
+            main.append(clause)
+    return main, appendices
 
 
 def get_text(element: ET.Element) -> str:
@@ -62,7 +419,6 @@ def get_heading_level(style: str | None) -> int:
     if style is None:
         return 0
     style_lower = style.lower()
-    # Handle Heading1, Heading2, etc.
     for prefix in ("heading", "标题"):
         if style_lower.startswith(prefix):
             remainder = style_lower[len(prefix):]
@@ -71,6 +427,60 @@ def get_heading_level(style: str | None) -> int:
             except ValueError:
                 return 1
     return 0
+
+
+def get_para_formatting(para: ET.Element) -> dict:
+    """Extract visual formatting signals from a paragraph element.
+
+    These signals help LLM identify document structure even when
+    heading styles are not used (common in Chinese contracts).
+    """
+    W = NAMESPACES["w"]
+    fmt: dict = {}
+
+    pPr = para.find(f"w:pPr", NAMESPACES)
+    if pPr is not None:
+        # Outline level (0-based; many contracts set this without heading style)
+        outlineLvl = pPr.find(f"w:outlineLvl", NAMESPACES)
+        if outlineLvl is not None:
+            val = outlineLvl.get(f"{{{W}}}val")
+            if val is not None:
+                fmt["outline_level"] = int(val)
+
+        # Paragraph alignment: center = likely title/chapter heading
+        jc = pPr.find(f"w:jc", NAMESPACES)
+        if jc is not None:
+            fmt["align"] = jc.get(f"{{{W}}}val", "")
+
+        # Left indent in twips — deeper indent = deeper nesting
+        ind = pPr.find(f"w:ind", NAMESPACES)
+        if ind is not None:
+            left = ind.get(f"{{{W}}}left") or ind.get(f"{{{W}}}leftChars")
+            if left is not None:
+                try:
+                    fmt["indent_left"] = int(left)
+                except ValueError:
+                    pass
+
+    # Run-level: check first run for bold / font size
+    first_run = para.find(f"w:r", NAMESPACES)
+    if first_run is not None:
+        rPr = first_run.find(f"w:rPr", NAMESPACES)
+        if rPr is not None:
+            b = rPr.find(f"w:b", NAMESPACES)
+            if b is not None:
+                val = b.get(f"{{{W}}}val", "true")
+                fmt["bold"] = val != "false" and val != "0"
+            sz = rPr.find(f"w:sz", NAMESPACES)
+            if sz is not None:
+                val = sz.get(f"{{{W}}}val")
+                if val is not None:
+                    try:
+                        fmt["font_size_half_pt"] = int(val)  # Word stores in half-points
+                    except ValueError:
+                        pass
+
+    return fmt
 
 
 def _smart_truncate(text: str, max_len: int, direction: str = "tail") -> str:
@@ -204,112 +614,85 @@ def extract_comment_refs(para: ET.Element) -> list[dict]:
 
 
 def build_clause_tree(paragraphs: list[dict]) -> list[dict]:
-    """Build a clause tree from flat paragraph list based on heading levels.
-    Returns clauses with location paths attached to each paragraph's revisions."""
-    clauses = []
-    current_clause = None
-    current_subclause = None
+    """Build a clause tree from flat paragraph list using heading levels.
+
+    Uses a monotonic-stack approach to support arbitrary nesting depth.
+    Heading level source: Word heading styles, or outline_level promoted
+    during extraction.  Non-heading paragraphs attach to nearest ancestor.
+    """
+    # Sentinel root at level 0
+    root: dict = {
+        "heading_level": 0,
+        "title": "前言/未分类",
+        "para_idx": 0,
+        "paragraphs": [],
+        "subclauses": [],
+    }
+    # Stack: list of clause nodes with increasing heading_level
+    stack: list[dict] = [root]
 
     for para in paragraphs:
         level = para.get("heading_level", 0)
+        text = (para.get("text") or "").strip()
 
-        if level == 1:
-            current_clause = {
-                "heading_level": 1,
-                "title": para.get("text", ""),
+        if level > 0 and text:
+            node: dict = {
+                "heading_level": level,
+                "title": text,
                 "para_idx": para["para_idx"],
                 "paragraphs": [para],
                 "subclauses": [],
             }
-            clauses.append(current_clause)
-            current_subclause = None
-        elif level == 2 and current_clause is not None:
-            current_subclause = {
-                "heading_level": 2,
-                "title": para.get("text", ""),
-                "para_idx": para["para_idx"],
-                "paragraphs": [para],
-                "subclauses": [],
-            }
-            current_clause["subclauses"].append(current_subclause)
-        elif level == 3 and current_subclause is not None:
-            subsub = {
-                "heading_level": 3,
-                "title": para.get("text", ""),
-                "para_idx": para["para_idx"],
-                "paragraphs": [para],
-            }
-            current_subclause["subclauses"].append(subsub)
-        elif level == 3 and current_clause is not None and current_subclause is None:
-            # Level 3 under level 1 directly
-            subsub = {
-                "heading_level": 3,
-                "title": para.get("text", ""),
-                "para_idx": para["para_idx"],
-                "paragraphs": [para],
-            }
-            current_clause["subclauses"].append(subsub)
+            # Pop stack until we find a parent with smaller level
+            while len(stack) > 1 and stack[-1]["heading_level"] >= level:
+                stack.pop()
+            stack[-1]["subclauses"].append(node)
+            stack.append(node)
         else:
-            # Regular paragraph - attach to current context
-            if current_subclause is not None:
-                current_subclause["paragraphs"].append(para)
-            elif current_clause is not None:
-                current_clause["paragraphs"].append(para)
-            else:
-                # Preamble or unclassified
-                if clauses and "paragraphs" in clauses[-1]:
-                    clauses[-1]["paragraphs"].append(para)
-                else:
-                    clauses.append({
-                        "heading_level": 0,
-                        "title": "前言/未分类",
-                        "para_idx": para["para_idx"],
-                        "paragraphs": [para],
-                        "subclauses": [],
-                    })
+            # Body paragraph — attach to current deepest node
+            stack[-1]["paragraphs"].append(para)
 
-    return clauses
+    # If root has subclauses, return them; otherwise return root itself
+    if root["subclauses"]:
+        # Move preamble paragraphs (before first heading) into a preamble node
+        if root["paragraphs"]:
+            preamble = {
+                "heading_level": 0,
+                "title": "前言/未分类",
+                "para_idx": 0,
+                "paragraphs": root["paragraphs"],
+                "subclauses": [],
+            }
+            return [preamble] + root["subclauses"]
+        return root["subclauses"]
+    else:
+        return [root]
 
 
 def attach_location_paths(clauses: list[dict]) -> None:
-    """Attach location paths to each revision in the clause tree.
-    Location format: '第X条 标题' or '第X条 标题 > 第X.X款 标题'."""
+    """Recursively attach location paths to every revision in the tree.
 
-    def _attach_to_clause(clause: dict, parent_path: str = "") -> None:
-        clause_title = clause.get("title", "")
-        if clause.get("heading_level", 0) == 0:
-            current_path = parent_path or "前言/未分类"
+    Path format: 'Title A > Title B > Title C' with arbitrary depth.
+    """
+
+    def _walk(node: dict, parent_path: str) -> None:
+        title = node.get("title", "")
+        if node.get("heading_level", 0) == 0 and not parent_path:
+            current_path = "前言/未分类"
+        elif parent_path:
+            current_path = f"{parent_path} > {title}" if title else parent_path
         else:
-            current_path = clause_title
+            current_path = title
 
-        for para in clause.get("paragraphs", []):
+        for para in node.get("paragraphs", []):
             for rev in para.get("revisions", []):
                 rev["location"] = current_path
 
-        for sub in clause.get("subclauses", []):
-            sub_title = sub.get("title", "")
-            if current_path and current_path != "前言/未分类":
-                sub_path = f"{current_path} > {sub_title}"
-            else:
-                sub_path = sub_title
-
-            for para in sub.get("paragraphs", []):
-                for rev in para.get("revisions", []):
-                    rev["location"] = sub_path
-
-            for subsub in sub.get("subclauses", []):
-                subsub_title = subsub.get("title", "")
-                if sub_path:
-                    subsub_path = f"{sub_path} > {subsub_title}"
-                else:
-                    subsub_path = subsub_title
-
-                for para in subsub.get("paragraphs", []):
-                    for rev in para.get("revisions", []):
-                        rev["location"] = subsub_path
+        for sub in node.get("subclauses", []):
+            _walk(sub, current_path)
 
     for clause in clauses:
-        _attach_to_clause(clause)
+        _walk(clause, "")
 
 
 def docx_has_revisions(docx_path: str) -> bool:
@@ -367,107 +750,7 @@ def extract_existing_from_para(
     }
 
 
-def _build_fallback_locations(paragraphs: list[dict], existing_loc: dict[int, str]) -> dict[int, str]:
-    """当自适应大纲解析失败时，用简单向上查找最近标题/编号段落作为 location。
 
-    策略：
-    1. 优先复用 existing_loc 中已有的解析结果
-    2. 对未解析的段落，向上遍历找到最近的 heading style 或文本编号段落
-    3. 返回完整的 para_idx → location 映射
-    """
-    import re
-
-    # 常见编号模式（简化版，覆盖中文合同主要格式）
-    numbering_patterns = [
-        re.compile(r"^第[一二三四五六七八九十百千\d]+条"),          # 第X条
-        re.compile(r"^第\d+\.\d+(?:\.\d+)*条"),                  # 第X.X条
-        re.compile(r"^\d+\.\d+(?:\.\d+)*"),                      # X.X.X
-        re.compile(r"^[一二三四五六七八九十]+[、，.]"),            # 一、
-        re.compile(r"^\d+[、，.]"),                               # 1.
-        re.compile(r"^[（(]\d+[)）]"),                            # (1)
-        re.compile(r"^[（(][一二三四五六七八九十]+[)）]"),        # (一)
-    ]
-
-    para_to_loc: dict[int, str] = dict(existing_loc)
-    current_loc = "前言/未分类"
-
-    for p in paragraphs:
-        idx = p["para_idx"]
-
-        # 如果已有解析结果，复用之
-        if idx in para_to_loc and para_to_loc[idx] != "前言/未分类":
-            current_loc = para_to_loc[idx]
-            continue
-
-        text = p.get("text", "").strip()
-        style = p.get("style", "")
-
-        # 判断当前段落是否是标题/编号段落
-        is_numbered = False
-        for pat in numbering_patterns:
-            if pat.match(text):
-                is_numbered = True
-                break
-
-        is_heading_p = is_heading(style)
-
-        if is_numbered or is_heading_p:
-            # 截断过长标题，保留核心信息
-            current_loc = text[:80] if len(text) <= 80 else text[:77] + "..."
-
-        para_to_loc[idx] = current_loc
-
-    return para_to_loc
-
-
-def _outline_to_legacy_clauses(outline_tree: list[dict], paragraphs: list[dict]) -> list[dict]:
-    """Convert outline_tree nodes to legacy clause format for backward compatibility.
-
-    Legacy format: {heading_level, title, para_idx, paragraphs: [...], subclauses: [...], revisions: []}
-    """
-    # Build para lookup
-    para_lookup = {p["para_idx"]: p for p in paragraphs}
-
-    def _convert(node: dict, depth: int = 1) -> dict:
-        # Gather paragraphs belonging to this node
-        owned_paras = []
-        # The node's own paragraph
-        if node["para_idx"] in para_lookup:
-            owned_paras.append(para_lookup[node["para_idx"]])
-        # Body paragraphs attached to this node
-        for pi in node.get("paragraphs", []):
-            if pi in para_lookup:
-                owned_paras.append(para_lookup[pi])
-
-        clause = {
-            "heading_level": depth,
-            "title": node.get("title", ""),
-            "para_idx": node.get("para_idx", 0),
-            "paragraphs": owned_paras,
-            "subclauses": [_convert(c, depth + 1) for c in node.get("children", [])],
-            "revisions": [],  # populated later by collect_clause_revisions
-        }
-        return clause
-
-    # Handle preamble (paragraphs before first outline node)
-    clauses = []
-    if outline_tree:
-        first_idx = outline_tree[0].get("para_idx", 0)
-        preamble_paras = [p for p in paragraphs if p["para_idx"] < first_idx]
-        if preamble_paras:
-            clauses.append({
-                "heading_level": 0,
-                "title": "前言/未分类",
-                "para_idx": 0,
-                "paragraphs": preamble_paras,
-                "subclauses": [],
-                "revisions": [],
-            })
-
-    for node in outline_tree:
-        clauses.append(_convert(node))
-
-    return clauses
 
 
 def extract_revisions(docx_path: str) -> dict:
@@ -488,6 +771,9 @@ def extract_revisions(docx_path: str) -> dict:
         if "word/document.xml" not in zf.namelist():
             raise ValueError("Invalid DOCX: word/document.xml not found")
 
+        # Initialize numbering resolver
+        num_resolver = NumberingResolver(zf)
+
         with zf.open("word/document.xml") as f:
             tree = ET.parse(f)
             root = tree.getroot()
@@ -501,34 +787,32 @@ def extract_revisions(docx_path: str) -> dict:
             for idx, para in enumerate(all_paras):
                 style = get_style(para)
                 text = get_text(para)
-                heading_level = get_heading_level(style) if is_heading(style) else 0
+                heading_flag = is_heading(style)
+                heading_level = get_heading_level(style) if heading_flag else 0
+                fmt = get_para_formatting(para)
 
-                # Extract w:numPr (Word auto-numbering)
-                _num_id = None
-                _ilvl = None
-                _pPr = para.find(f"{{{NAMESPACES['w']}}}pPr", NAMESPACES)
-                if _pPr is not None:
-                    _numPr = _pPr.find(f"{{{NAMESPACES['w']}}}numPr")
-                    if _numPr is not None:
-                        _numId_el = _numPr.find(f"{{{NAMESPACES['w']}}}numId")
-                        _ilvl_el = _numPr.find(f"{{{NAMESPACES['w']}}}ilvl")
-                        if _numId_el is not None:
-                            _num_id = _numId_el.get(f"{{{NAMESPACES['w']}}}val")
-                        if _ilvl_el is not None:
-                            try:
-                                _ilvl = int(_ilvl_el.get(f"{{{NAMESPACES['w']}}}val", "0"))
-                            except (ValueError, TypeError):
-                                pass
+                # Resolve Word auto-numbering (w:numPr → visible prefix)
+                num_prefix = num_resolver.resolve(para)
+                if num_prefix and text:
+                    text = num_prefix + text
+
+                # Promote outline_level to heading if style didn't mark it
+                if not heading_flag and "outline_level" in fmt:
+                    heading_flag = True
+                    heading_level = fmt["outline_level"] + 1  # 0-based → 1-based
 
                 para_info = {
                     "para_idx": idx,
                     "text": text,
                     "style": style,
-                    "is_heading": is_heading(style),
+                    "is_heading": heading_flag,
                     "heading_level": heading_level,
-                    "num_id": _num_id,
-                    "ilvl": _ilvl,
                 }
+                if num_prefix:
+                    para_info["num_prefix"] = num_prefix
+                # Merge formatting signals (only non-empty)
+                if fmt:
+                    para_info["fmt"] = fmt
 
                 if has_revisions:
                     # Revision mode: extract w:ins / w:del
@@ -554,24 +838,26 @@ def extract_revisions(docx_path: str) -> dict:
     # Extract comments
     comments = extract_comments(docx_path)
 
-    # Build outline structure using adaptive numbering detection
-    from clause_numbering import parse_outline
-    outline = parse_outline(paragraphs)
+    # ---- Heading heuristic: enrich paragraphs before building tree ----
+    doc_patterns = _scan_doc_patterns(paragraphs)
+    for para in paragraphs:
+        if para["heading_level"] > 0:
+            continue  # already identified via style / outline_level
+        text = (para.get("text") or "").strip()
+        if not text:
+            continue
+        fmt = para.get("fmt", {})
+        guessed = _guess_heading_level(text, fmt, doc_patterns)
+        if guessed > 0:
+            para["heading_level"] = guessed
+            para["is_heading"] = True
+            para["heading_source"] = "heuristic"
+        if _RE_APPENDIX.match(text):
+            para["is_appendix_title"] = True
 
-    # Attach location paths to all revisions using para_to_location mapping
-    para_to_loc = outline["para_to_location"]
-
-    # Fallback: if outline parsing failed (too few locations mapped),
-    # use simple upward lookup to find the nearest heading/numbered paragraph.
-    coverage = len(para_to_loc) / len(paragraphs) if paragraphs else 0
-    if coverage < 0.3:
-        para_to_loc = _build_fallback_locations(paragraphs, para_to_loc)
-
-    for rev in all_revisions:
-        rev["location"] = para_to_loc.get(rev["para_idx"], "前言/未分类")
-
-    # Convert outline_tree to legacy clause format for backward compatibility
-    clauses = _outline_to_legacy_clauses(outline["outline_tree"], paragraphs)
+    # Build clause tree and separate appendices
+    clauses = build_clause_tree(paragraphs)
+    main_clauses, appendices = _separate_appendices(clauses)
 
     # Aggregate revisions by clause
     def collect_clause_revisions(clause: dict) -> list[dict]:
@@ -582,8 +868,14 @@ def extract_revisions(docx_path: str) -> dict:
             revs.extend(collect_clause_revisions(sub))
         return revs
 
-    for clause in clauses:
+    for clause in main_clauses + appendices:
         clause["revisions"] = collect_clause_revisions(clause)
+
+    # Attach location paths using heading-based clause tree
+    attach_location_paths(main_clauses)
+    attach_location_paths(appendices)
+    for rev in all_revisions:
+        rev.setdefault("location", "前言/未分类")
 
     # Build ordered revisions list sorted by document position (top-to-bottom)
     ordered_revisions = sorted(
@@ -612,26 +904,27 @@ def extract_revisions(docx_path: str) -> dict:
         "deletions": sum(1 for r in all_revisions if r["type"] == "deletion"),
         "existing": sum(1 for r in all_revisions if r["type"] == "existing"),
         "total_comments": len(comments),
-        "total_clauses": len(clauses),
+        "total_clauses": len(main_clauses),
+        "total_appendices": len(appendices),
         "has_revisions": has_revisions,
+        "heading_source": (
+            "styles" if doc_patterns["has_heading_styles"]
+            else "heuristic" if doc_patterns["has_any_numbering"]
+            else "bold_fallback" if any(p.get("heading_source") == "heuristic" for p in paragraphs)
+            else "none"
+        ),
+        "doc_patterns": doc_patterns,
     }
 
     result = {
         "document": docx_path,
         "summary": summary,
         "paragraphs": paragraphs,
-        "clauses": clauses,
+        "clauses": main_clauses,
+        "appendices": appendices,
         "ordered_revisions": ordered_revisions,
         "comments": comments,
         "paragraph_comments": para_comments,
-        "outline": {
-            "tree": outline["outline_tree"],
-            "level_map": outline["level_map"],
-            "scheme_info": outline["scheme_info"],
-            "confidence_issues": outline["confidence_issues"],
-            "consistency_issues": outline.get("consistency_issues", []),
-            "learned_rules_applied": outline["learned_rules_applied"],
-        },
     }
 
     return result

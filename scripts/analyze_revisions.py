@@ -281,34 +281,7 @@ class RiskAssessor:
 # ---------------------------------------------------------------------------
 
 class RevisionClusterer:
-    """Group related revisions by theme with perspective awareness.
-
-    Perspective: 乙方 = 我方 = Moonshot / 月之暗面 / 揽月星辰 / Kimi 等关联实体。
-    聚类时必须判断修订方向：是增加我方义务（不利）还是增加我方权利/免责（有利）。
-    """
-
-    # 我方代称（合同中乙方及其同义表述 + Moonshot 系实体名称）
-    SELF_REFERENTS = [
-        "乙方", "服务提供方", "供应方", "承揽方", "受托方", "承包方",
-        "接收方", "被许可方", "服务商", "vendor", "service provider",
-        "moonshot", "月之暗面", "揽月星辰", "kimi",
-    ]
-
-    # 有利方向标记：增加我方权利、免责、例外（对乙方/Moonshot 有利）
-    # ⚠️ 必须是完整词或明确短语，避免单字误匹配（如 "可" 会命中 "许可"/"知识产权"）
-    FAVORABLE_MARKERS = [
-        "有权", "可以", "不承担", "不视为", "免除", "豁免",
-        "除外", "保留", "享有", "无需", "不必", "无须",
-    ]
-
-    # 不利方向标记：增加我方义务、责任、承诺（对乙方/Moonshot 不利）
-    UNFAVORABLE_MARKERS = [
-        "应承担", "应负责", "须承担", "须负责", "必须", "有义务",
-        "保证", "承诺", "同意接受", "同意承担", "确保", "维持",
-    ]
-
-    # 负面聚类主题：对我方有利的修订不应归入这些主题
-    NEGATIVE_THEMES = {"责任范围扩大", "服务义务扩大", "付款条件恶化", "数据安全义务加重"}
+    """Group related revisions by theme."""
 
     CLUSTERS = [
         {
@@ -348,78 +321,9 @@ class RevisionClusterer:
         },
     ]
 
-    def _analyze_direction(self, text: str, clause_type: str, full: str) -> str:
-        """分析修订对我方（乙方/Moonshot系实体）的方向。
-
-        核心原则：优先基于 revision text 本身判断，避免 full_sentence 跨片段污染
-        （Word 常把一句话拆成多个修订标记，共享同一段 full_sentence）。
-
-        Returns: "favorable" | "unfavorable" | "neutral"
-        """
-        primary = text.lower()
-        # 只有 text 极短（<8字符，通常是标点/碎片）时才参考上下文
-        if len(text.strip()) < 8:
-            combined = f"{text} {clause_type} {full}".lower()
-        else:
-            combined = primary
-
-        # 1. 检查是否涉及我方
-        refers_to_self = any(ref.lower() in combined for ref in self.SELF_REFERENTS)
-
-        # 2. 明确有利模式（强信号）—— 基于 primary 避免 full_sentence 污染
-        favorable_patterns = [
-            r"不视为.*违约", r"不构成.*违约",
-            r"不承担.*责任", r"不视为.*责任",
-            r"不承担.*义务", r"不承担.*损失",
-            r"免除.*责任", r"豁免.*责任",
-            r"乙方.*有权", r"乙方.*可以",
-            r"保留.*权利", r"享有.*权利",
-        ]
-        for pat in favorable_patterns:
-            if re.search(pat, primary):
-                return "favorable"
-
-        # 3. 明确不利模式（强信号）
-        unfavorable_patterns = [
-            r"乙方.*应承担", r"乙方.*应负责", r"乙方.*须",
-            r"乙方.*必须", r"乙方.*有义务", r"乙方.*保证",
-            r"乙方.*承诺", r"乙方.*不得",
-        ]
-        for pat in unfavorable_patterns:
-            if re.search(pat, combined):
-                return "unfavorable"
-
-        # 4. 统计标记词
-        favorable_count = sum(1 for m in self.FAVORABLE_MARKERS if m in combined)
-        unfavorable_count = sum(1 for m in self.UNFAVORABLE_MARKERS if m in combined)
-
-        if favorable_count > unfavorable_count:
-            return "favorable"
-        elif unfavorable_count > favorable_count:
-            return "unfavorable"
-
-        # 5. 不涉及我方 → 中性（如纯甲方义务条款）
-        if not refers_to_self:
-            return "neutral"
-
-        return "neutral"
-
     def cluster(self, analyzed_revisions: list[dict]) -> list[dict]:
-        """Group revisions into thematic clusters with direction awareness.
-
-        防污染策略：
-        1. 优先用 revision text 本身匹配，避免 full_sentence 跨碎片污染
-        2. text 本身没匹配到的 neutral 碎片 → 跳过（不放入任何负面聚类）
-        3. text 本身没匹配到的 unfavorable 碎片 → 允许用 full_sentence 兜底匹配
-        4. favorable 碎片 → 绝不放入负面聚类
-        """
-        # Phase 0: Direction analysis
-        for rev in analyzed_revisions:
-            text = rev.get("text", "")
-            clause_type = rev.get("clause_type", "")
-            full = rev.get("context", {}).get("full_sentence", "")
-            rev["_direction"] = self._analyze_direction(text, clause_type, full)
-
+        """Group revisions into thematic clusters.
+        A revision must match at least min_keyword_matches keywords to be included."""
         clusters = []
 
         for cluster_def in self.CLUSTERS:
@@ -430,33 +334,12 @@ class RevisionClusterer:
             matched_ids = []
 
             for rev in analyzed_revisions:
-                direction = rev.get("_direction", "neutral")
-
-                # Filter 1: favorable revisions should NOT go into negative clusters
-                if direction == "favorable" and theme in self.NEGATIVE_THEMES:
-                    continue
-
                 text = rev.get("text", "")
                 clause_type = rev.get("clause_type", "")
                 full = rev.get("context", {}).get("full_sentence", "")
-
-                # Step 1: try matching with text itself first
-                primary = f"{text} {clause_type}"
-                norm_primary = normalize_text(primary)
-                primary_match = sum(1 for kw in keywords if normalize_text(kw) in norm_primary)
-
-                if primary_match >= min_matches:
-                    matched_ids.append(rev.get("id"))
-                    continue
-
-                # Step 2: text itself didn't match → use full_sentence as fallback
-                # But neutral fragments are easily polluted by co-located keywords,
-                # so we only allow unfavorable fragments to fallback.
-                if direction == "neutral":
-                    continue
-
                 combined = f"{text} {clause_type} {full}"
                 norm_combined = normalize_text(combined)
+
                 match_count = sum(1 for kw in keywords if normalize_text(kw) in norm_combined)
 
                 if match_count >= min_matches:
@@ -469,19 +352,6 @@ class RevisionClusterer:
                     "revision_ids": matched_ids,
                     "count": len(matched_ids),
                 })
-
-        # Phase 2: Add positive cluster for favorable revisions
-        favorable_ids = [
-            r.get("id") for r in analyzed_revisions
-            if r.get("_direction") == "favorable"
-        ]
-        if len(favorable_ids) >= 2:
-            clusters.append({
-                "group_id": "favorable_terms",
-                "theme": "乙方有利条款增加",
-                "revision_ids": favorable_ids,
-                "count": len(favorable_ids),
-            })
 
         return clusters
 
@@ -581,12 +451,12 @@ def analyze_revisions(docx_path: str, playbook: str | None = None, mode: str = "
         "analyzed_revisions": analyzed,
         "revision_clusters": clusters,
         "summary_by_risk": summary_by_risk,
-        "consistency_issues": raw.get("outline", {}).get("consistency_issues", []),
+        "paragraphs": raw["paragraphs"],
         "raw": {
             "clauses": raw["clauses"],
+            "appendices": raw.get("appendices", []),
             "comments": raw["comments"],
             "paragraph_comments": raw["paragraph_comments"],
-            "outline": raw.get("outline"),
         },
     }
 
@@ -638,19 +508,6 @@ def main():
             i += 1
 
     result = analyze_revisions(docx_path, playbook=playbook, mode=mode)
-
-    # Print consistency issues summary to CLI (non-JSON) for immediate visibility
-    issues = result.get("consistency_issues", [])
-    if issues:
-        print("=" * 60)
-        print(f"⚠️  发现 {len(issues)} 个结构性问题（consistency_issues）：")
-        print("=" * 60)
-        for i, issue in enumerate(issues, 1):
-            print(f"  {i}. [{issue['type']}] para {issue['para_idx']}: {issue['message']}")
-            print(f"     当前: {issue['current']} | 期望: {issue['expected']}")
-            print(f"     建议: {issue['suggestion']}")
-        print("=" * 60)
-        print()
 
     json_output = json.dumps(result, ensure_ascii=False, indent=2)
 

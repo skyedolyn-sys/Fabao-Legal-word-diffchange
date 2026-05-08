@@ -200,7 +200,7 @@ class RevisionExecutor:
         return candidates[0][0], candidates[0][1]
 
     def _do_replace_in_text(self, action: dict, location_hint: str) -> tuple[bool, str]:
-        """将 old_text 替换为 new_text（通过 del + ins），保留 run 内前缀/后缀文本。"""
+        """将 old_text 替换为 new_text（通过 del + ins）。"""
         old_text = action.get("original_text", "")
         new_text = action.get("replacement_text", "")
 
@@ -215,38 +215,20 @@ class RevisionExecutor:
             if tag == "r":
                 t = child.find(f"{W}t")
                 if t is not None and t.text and old_text in t.text:
-                    full_text = t.text
-                    pos = full_text.index(old_text)
-                    prefix = full_text[:pos]
-                    suffix = full_text[pos + len(old_text):]
-
-                    para.remove(child)
-                    insert_pos = i
-
-                    # 保留前缀 run
-                    if prefix:
-                        prefix_r = self.builder.create_run(prefix)
-                        para.insert(insert_pos, prefix_r)
-                        insert_pos += 1
-
-                    # del + ins
+                    # 找到目标 run，替换为 del + ins
                     del_el = self.builder.create_del(old_text)
                     ins_el = self.builder.create_ins(new_text)
-                    para.insert(insert_pos, del_el)
-                    insert_pos += 1
-                    para.insert(insert_pos, ins_el)
-                    insert_pos += 1
-
-                    # 保留后缀 run
-                    if suffix:
-                        suffix_r = self.builder.create_run(suffix)
-                        para.insert(insert_pos, suffix_r)
-
+                    para.remove(child)
+                    para.insert(i, del_el)
+                    para.insert(i + 1, ins_el)
                     return True, ""
 
-        # 文本可能在多个 runs 中分散
+        # 文本可能在多个 runs 中分散，尝试简化处理：如果段落包含该文本但未在单个run中找到
+        # 尝试包装包含文本的连续 runs
         para_text = self.op.get_paragraph_text(para)
         if old_text in para_text:
+            # 尝试更简单的策略：直接在段落末尾添加 del + ins
+            # 这不是理想方案，但至少能工作
             del_el = self.builder.create_del(old_text)
             ins_el = self.builder.create_ins(new_text)
             para.append(del_el)
@@ -261,7 +243,7 @@ class RevisionExecutor:
         return self._do_replace_in_text(action, location_hint)
 
     def _do_delete_text(self, action: dict, location_hint: str) -> tuple[bool, str]:
-        """将文本包装为删除修订，保留 run 内前缀/后缀文本。"""
+        """将文本包装为删除修订。"""
         old_text = action.get("original_text", "")
 
         para, idx = self._find_target_paragraph(old_text, location_hint)
@@ -278,30 +260,6 @@ class RevisionExecutor:
                     del_el = self.builder.create_del(old_text)
                     para.remove(child)
                     para.insert(i, del_el)
-                    return True, ""
-                if t is not None and t.text and old_text in t.text:
-                    # 部分匹配，保留前缀/后缀
-                    full_text = t.text
-                    pos = full_text.index(old_text)
-                    prefix = full_text[:pos]
-                    suffix = full_text[pos + len(old_text):]
-
-                    para.remove(child)
-                    insert_pos = i
-
-                    if prefix:
-                        prefix_r = self.builder.create_run(prefix)
-                        para.insert(insert_pos, prefix_r)
-                        insert_pos += 1
-
-                    del_el = self.builder.create_del(old_text)
-                    para.insert(insert_pos, del_el)
-                    insert_pos += 1
-
-                    if suffix:
-                        suffix_r = self.builder.create_run(suffix)
-                        para.insert(insert_pos, suffix_r)
-
                     return True, ""
 
         return False, f"在段落中未找到精确匹配的文本: '{old_text[:60]}...'"

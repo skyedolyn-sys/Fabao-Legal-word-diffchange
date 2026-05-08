@@ -242,8 +242,8 @@ class RevisionBuilder:
         """
         在段落中将 old_text 替换为 new_text，通过 del + ins 实现。
 
-        正确处理 run 内部分替换：保留 old_text 前后的文本，
-        将 run 拆分为 prefix_run + <w:del>(old_text) + <w:ins>(new_text) + suffix_run。
+        简单实现：查找第一个包含 old_text 的 <w:t>，
+        将包含 old_text 的 <w:r> 替换为 <w:del>(old_text) + <w:ins>(new_text)。
 
         Args:
             para: <w:p> 元素。
@@ -260,34 +260,13 @@ class RevisionBuilder:
         for r in para.iter(f"{W}r"):
             for t in r.iter(f"{W}t"):
                 if t.text and old_text in t.text:
-                    full_text = t.text
-                    pos = full_text.index(old_text)
-                    prefix = full_text[:pos]
-                    suffix = full_text[pos + len(old_text):]
-
                     idx = list(para).index(r)
-                    para.remove(r)
-
-                    insert_pos = idx
-                    # prefix run（保留原始格式）
-                    if prefix:
-                        prefix_r = self.create_run(prefix)
-                        para.insert(insert_pos, prefix_r)
-                        insert_pos += 1
-
-                    # del + ins
+                    # 创建 del + ins
                     deletion = self.create_del(old_text)
                     ins = self.create_ins(new_text)
-                    para.insert(insert_pos, deletion)
-                    insert_pos += 1
-                    para.insert(insert_pos, ins)
-                    insert_pos += 1
-
-                    # suffix run（保留原始格式）
-                    if suffix:
-                        suffix_r = self.create_run(suffix)
-                        para.insert(insert_pos, suffix_r)
-
+                    para.remove(r)
+                    para.insert(idx, deletion)
+                    para.insert(idx + 1, ins)
                     return True
         return False
 

@@ -69,7 +69,6 @@ kimi-fabao/
 ├── README.md                 # 本文件
 ├── scripts/
 │   ├── analyze_revisions.py      # 核心分析引擎
-│   ├── clause_numbering.py       # 条款编号解析与学习
 │   ├── extract_revisions.py      # 修订标记提取
 │   └── write/                    # 自动写入修订模块
 ├── rules/

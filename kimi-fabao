@@ -3,8 +3,7 @@
 #
 # 用法:
 #   kimi-fabao <input.docx> [output.json]
-#   kimi-fabao <input.docx> --playbook nda     # 使用 NDA 专用规则
-#   kimi-fabao <input.docx> --mode template    # 模板初筛模式（无修订标记）
+#   kimi-fabao <input.docx> --summary          # 仅输出摘要
 #
 # 安装:
 #   ln -s ~/.claude/skills/kimi-fabao/kimi-fabao ~/.local/bin/kimi-fabao

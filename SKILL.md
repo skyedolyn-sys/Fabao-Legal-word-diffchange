@@ -23,9 +23,6 @@ description: >
 
 本技能定位为**服务提供方（乙方）视角**的合同修订逐条审阅工具。
 
-**视角定义**：「乙方」=「我方」= Moonshot / 月之暗面 / 揽月星辰 / Kimi 及其关联实体。
-所有风险判断、接受度评估、建议动作均默认从上述我方实体的利益出发。
-
 核心目标：帮助乙方法务/商务人员快速识别甲方在合同修订中埋设的风险条款，
 评估接受度，并给出具体的修改建议。
 
@@ -119,67 +116,49 @@ LLM 根据以下信息判断合同类型，决定是否使用专用 Playbook：
 
 **引擎内部完成的工作**：
 0. 合同类型识别（LLM 层）：根据文件名、用户描述、文档标题自动判断合同类型，选择对应 Playbook
-1. 解析 DOCX 结构（段落层级、标题路径）
+1. 解析 DOCX 结构（段落、标题样式）
 2. 自动检测审阅模式：
    - **Revision 模式**：提取 `w:ins` / `w:del` 修订标记与批注，分析增量风险
    - **Template 模式**：提取所有条款段落作为 `existing` 记录，全量扫描风险条款
-3. 按条款聚合修订/段落并附加定位信息（`location: "第X条 > 第X.X款"`）
-4. 提取每条修订的上下文片段（`before` / `after` / `full_sentence`）
-5. 基于 `rules/clause_patterns.json`（或 Playbook 专用规则）自动分类条款类型
-6. 基于 `rules/risk_rules.json`（或 Playbook 专用规则）做初步风险标记（🔴/🟠/🟢）
-7. 关联修订聚类（识别跨条款风险叠加）
-8. 支持 `--playbook` 参数切换合同类型专用规则（如 `nda`）
-9. 支持 `--mode` 参数切换审阅模式（`revision` / `template`）
+3. 按 heading 样式进行基础条款分组，提取每条修订的上下文片段（`before` / `after` / `full_sentence`）
+4. 基于 `rules/clause_patterns.json`（或 Playbook 专用规则）自动分类条款类型
+5. 基于 `rules/risk_rules.json`（或 Playbook 专用规则）做初步风险标记（🔴/🟠/🟢）
+6. 关联修订聚类（识别跨条款风险叠加）
+7. 支持 `--playbook` 参数切换合同类型专用规则（如 `nda`）
+8. 支持 `--mode` 参数切换审阅模式（`revision` / `template`）
 
 **输出结构化 JSON**，包含：
-- `analyzed_revisions`: 带定位、类型、初步风险等级的修订列表（按文档顺序排列）
+- `analyzed_revisions`: 带初步定位、类型、初步风险等级的修订列表（按文档顺序排列）
 - `revision_clusters`: 关联修订组（如"责任范围扩大"集群）
 - `summary_by_risk`: 按风险等级预聚合的视图（`high` / `medium` / `low` / `unknown`）
 - `summary`: 修订统计与风险分布
-- `raw.outline`: 自动识别的全文大纲结构（新增）
+- `raw.clauses`: 条款树（主文正文部分）
+- `raw.appendices`: 附件列表（独立于主文 clause tree）
+- `paragraphs`: 全部段落原始数据（含 text, style, is_heading, heading_level, fmt）
+- `summary.heading_source`: 结构识别来源（`styles` / `heuristic` / `bold_fallback` / `none`）
+- `summary.doc_patterns`: 文档编号模式档案（has_zhang / has_tiao / has_cn_ordinal / has_decimal 等）
 
-### Step 1.5: 大纲结构审阅
+### Step 1.5: 结构识别（引擎启发式 + LLM 精化）
 
-引擎输出的 `raw.outline` 字段包含自适应识别的全文大纲结构：
-- `tree`：N 层嵌套树，每个节点含 `level`, `title`, `raw_match`, `confidence`
-- `level_map`：编号类型→层级映射（如 `CHINESE_CHAPTER→1, CHINESE_ARTICLE→3`）
-- `confidence_issues`：置信度 < 0.8 的条目列表
-- `consistency_issues`：上下块结构性异常列表（跳号、层级跳跃、重复编号、父级缺失、格式突变）
-- `learned_rules_applied`：本次应用了多少条历史学习规则
+引擎现在**自动检测文档编号模式**并完成粗分：
 
-**LLM 审阅职责**：
-1. 快速扫描 `confidence_issues`，如有内容，结合上下文判断其正确层级
-2. **扫描 `consistency_issues`**：引擎自动检测以下结构性异常，LLM 需结合上下文判断是否为真实问题：
-   - `ordinal_gap`：编号不连续（如 3.1→3.3 缺 3.2；第一章→第四章 缺二、三章）
-   - `level_jump` / `level_regress`：相邻标题层级跳跃过大（如 level 1 直接跳到 level 4）
-   - `duplicate_number`：重复编号（如两个"第二条"）
-   - `parent_missing`：子级编号缺少父级（如 3.1 但没有 3 或"第三条"）
-   - `format_inconsistency`：同层级混用不同编号格式（如 level 1 既有"第X条"又有"X.X"）
-   - 如果确认是真实问题，在报告中标注 **[结构异常]** 并说明影响；如果是误报（如合同故意跳过某章节），注明"经核对，此为合同原有结构，非异常"
-3. 验证 `level_map` 是否合理（编号类型的层级排序是否符合文档结构）
-4. 在报告中使用 `location` 路径作为条款定位
-5. 如果 `learned_rules_applied > 0`，在报告开头注明"本次分析应用了 N 条历史学习规则"
+**引擎启发式（两遍扫描）**：
+- **第一遍**：扫描全文段落，统计哪些编号 pattern 存在（`第X章`、`第X条`、`一、`、`X.X`、`（一）`）
+- **第二遍**：根据模式档案，赋予每段启发式 heading_level：
+  - `第X章` → 始终 L1
+  - `第X条` → L1（无章）/ L2（有章）
+  - `一、` → L1（无条无章）/ L2（有条）/ L3（有章+条）
+  - `（一）` → L2（无条）/ L3（有条）
+  - `X.X` / `X.X.X` → L2/L3（自动按 dot 数递增）
+  - `附件X` / `Appendix X` → L1，独立分离到 `appendices`
+  - **Bold+短文本 fallback**：仅当全文无任何编号 pattern 时启用；排除居中文本、含冒号文本
 
-**低置信条目处理**：
-如果 `confidence_issues` 不为空，逐项检查：
-- 查看该段落的前后文，判断其编号类型是否被正确归级
-- 如果你（LLM）认为引擎的层级判断有误，在报告中标注 **[结构待确认]** 并说明推理
-
-**LLM 修正回流规则库**（核心闭环）：
-当你对低置信条目做出修正后，**必须询问用户确认**。用户确认后，运行以下命令将修正写入规则库：
-```bash
-python3 ~/.claude/skills/kimi-fabao/scripts/clause_numbering.py --learn-from-correction '{
-  "pattern_type": "CHINESE_PAREN",
-  "before_type": "CHINESE_ARTICLE",
-  "after_type": "DECIMAL_SINGLE",
-  "correct_level": 2,
-  "source_doc": "合同文件名",
-  "reasoning": "修正原因",
-  "user_confirmed": true
-}'
-```
-下次分析同类合同时，规则引擎直接命中学习规则，无需 LLM 再次介入。
-可用 `--show-rules` 查看所有学习规则，`--clear-rules` 清空规则库。
+**LLM 精化职责**（在引擎粗分基础上）：
+1. 检查 `summary.heading_source`，了解引擎使用了哪种识别策略
+2. 对引擎标记为 `heading_source: "heuristic"` 的条款做校验
+3. 识别引擎遗漏的子节标题（无格式短文本如“服务类别”“服务期限”）
+4. 确定每处修订所属的精确条款位置，在报告中使用原文编号形式
+5. 校准引擎给出的 `location` 路径
 
 ### Step 2: LLM 复核与精化
 
@@ -214,18 +193,6 @@ python3 ~/.claude/skills/kimi-fabao/scripts/clause_numbering.py --learn-from-cor
 - 是否存在"删除责任上限"+"扩大赔偿范围"的责任叠加？
 - 是否存在"服务范围扩大"+"免费义务增加"的成本叠加？
 - 聚类结果是否合理？是否存在误判？
-
-**聚类方向判断（防误判）**：
-引擎已内置方向感知逻辑，自动识别修订对乙方（我方）的方向：
-- **favorable**（有利）：如「不视为乙方违约」「乙方有权」「乙方不承担」等增加免责/权利的修订
-- **unfavorable**（不利）：如「乙方应承担」「乙方不得」「乙方须保证」等增加义务/责任的修订
-- **neutral**（中性）：如定义细化、格式调整、联系方式更新等无实质影响的修订
-
-**LLM 复核要点**：
-1. 检查「乙方有利条款增加」集群中的修订是否确实对我方有利
-2. 检查负面聚类（责任范围扩大/服务义务扩大/付款条件恶化）是否误入了有利或中性碎片
-   - Word 常将一句话拆成多个修订标记，中性碎片（如「包括但不限于删减、编辑等」）不应被同句中的「违约」关键词污染进「责任范围扩大」聚类
-3. 若发现方向误判，在报告中标注 **[方向修正]** 并说明推理
 
 ### Step 4: 生成审阅报告
 基于引擎输出 + LLM 复核，生成结构化审阅报告（见第4节输出格式规范）。
