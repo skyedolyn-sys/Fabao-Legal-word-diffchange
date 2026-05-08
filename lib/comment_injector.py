@@ -10,22 +10,35 @@ Word 批注（Comments）注入器。
 """
 
 import re
+import secrets
 from datetime import datetime, timezone
 from xml.etree import ElementTree as ET
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+W14 = "{http://schemas.microsoft.com/office/word/2010/wordml}"
+W15 = "{http://schemas.microsoft.com/office/word/2012/wordml}"
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _gen_para_id() -> str:
+    """生成 8 位十六进制 paraId（与 Word 原生格式一致）。"""
+    return secrets.token_hex(4).upper()
+
+
 class CommentInjector:
     """管理 Word 文档中的批注（comments）。"""
 
-    def __init__(self, author: str = "Moonshot Legal"):
+    def __init__(self, author: str = "Moonshot Legal",
+                 comment_text_style: str = "7",
+                 comment_ref_style: str = "17"):
         self.author = author
         self._next_comment_id = 0
+        self.comment_text_style = comment_text_style  # 段落样式: annotation text
+        self.comment_ref_style = comment_ref_style    # 字符样式: annotation reference
+        self._new_comment_para_ids: list[tuple[int, str]] = []  # [(comment_id, para_id)]
 
     def set_start_id(self, start: int) -> None:
         """手动设置起始批注 id。"""
@@ -56,6 +69,10 @@ class CommentInjector:
         """
         向 comments.xml 中添加一条批注。
 
+        生成的 XML 与 Word 原生格式一致：
+        - <w:p> 带 w14:paraId 和 <w:pStyle val="7"/>
+        - <w:r> 带 <w:rPr><w:rStyle val="17"/></w:rPr>
+
         Args:
             comments_root: <w:comments> 根元素。
             text: 批注文本。
@@ -79,13 +96,25 @@ class CommentInjector:
         comment_el.set(f"{W}date", date)
         comment_el.set(f"{W}initials", "".join(c for c in author if c.isupper())[:2])
 
-        # 批注内容段落
+        # 批注内容段落（带 paraId 和 pStyle）
+        para_id = _gen_para_id()
         p = ET.SubElement(comment_el, f"{W}p")
+        p.set(f"{W14}paraId", para_id)
+
+        # 段落样式: annotation text
+        pPr = ET.SubElement(p, f"{W}pPr")
+        pStyle = ET.SubElement(pPr, f"{W}pStyle")
+        pStyle.set(f"{W}val", self.comment_text_style)
+
+        # 批注文本 run
         r = ET.SubElement(p, f"{W}r")
         t = ET.SubElement(r, f"{W}t")
         t.text = text
         if text.startswith(" ") or text.endswith(" "):
             t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+
+        # 记录 paraId 以便后续同步到 commentsExtended.xml
+        self._new_comment_para_ids.append((comment_id, para_id))
 
         return comment_id
 
@@ -180,7 +209,7 @@ class CommentInjector:
                     ref_el = ET.Element(f"{W}r")
                     ref_rPr = ET.SubElement(ref_el, f"{W}rPr")
                     ref_style = ET.SubElement(ref_rPr, f"{W}rStyle")
-                    ref_style.set(f"{W}val", "CommentReference")
+                    ref_style.set(f"{W}val", self.comment_ref_style)
                     ref_comment = ET.SubElement(ref_el, f"{W}commentReference")
                     ref_comment.set(f"{W}id", str(comment_id))
 
@@ -202,7 +231,7 @@ class CommentInjector:
         ref_el = ET.Element(f"{W}r")
         ref_rPr = ET.SubElement(ref_el, f"{W}rPr")
         ref_style = ET.SubElement(ref_rPr, f"{W}rStyle")
-        ref_style.set(f"{W}val", "CommentReference")
+        ref_style.set(f"{W}val", self.comment_ref_style)
         ref_comment = ET.SubElement(ref_el, f"{W}commentReference")
         ref_comment.set(f"{W}id", str(comment_id))
 
@@ -210,6 +239,50 @@ class CommentInjector:
         paragraph.append(end_el)
         paragraph.append(ref_el)
         return True
+
+    # ------------------------------------------------------------------
+    # commentsExtended.xml 同步
+    # ------------------------------------------------------------------
+
+    def sync_comments_extended(self, docx_op) -> int:
+        """
+        为新添加的批注在 commentsExtended.xml 中创建对应的 commentEx 条目。
+
+        Args:
+            docx_op: DocxOperator 实例。
+
+        Returns:
+            新增的 commentEx 条目数。
+        """
+        if not self._new_comment_para_ids:
+            return 0
+
+        ce_root = docx_op.get_comments_extended()
+        if ce_root is None:
+            # 创建新的 commentsExtended.xml
+            ce_root = ET.Element(f"{W15}commentsEx")
+            docx_op.set_comments_extended(ce_root)
+
+        # 收集已有的 paraId
+        existing = set()
+        for ex in ce_root:
+            pid = ex.get(f"{W15}paraId")
+            if pid:
+                existing.add(pid)
+
+        count = 0
+        for comment_id, para_id in self._new_comment_para_ids:
+            if para_id not in existing:
+                ex = ET.SubElement(ce_root, f"{W15}commentEx")
+                ex.set(f"{W15}paraId", para_id)
+                ex.set(f"{W15}done", "0")
+                count += 1
+
+        if count > 0:
+            # 标记 commentsExtended.xml 已修改，确保 save() 重新序列化
+            docx_op.mark_modified("word/commentsExtended.xml")
+
+        return count
 
     # ------------------------------------------------------------------
     # 便捷方法：添加段落批注（含 comments.xml + document.xml 范围标记）
@@ -237,12 +310,12 @@ class CommentInjector:
         # 确保 comments.xml 存在
         comments_root = docx_op.ensure_comments_xml_structure()
 
-        # 同步起始 id
+        # 同步起始 id（基于 comments.xml 中的最大 id）
         max_existing = self.find_max_comment_id(comments_root)
         if max_existing >= self._next_comment_id:
             self.set_start_id(max_existing + 1)
 
-        # 添加批注内容
+        # 添加批注内容（带 paraId + pStyle）
         comment_id = self.add_comment(comments_root, comment_text)
 
         # 在 document.xml 中插入范围标记

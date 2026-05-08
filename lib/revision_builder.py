@@ -7,6 +7,7 @@ Open XML Track Changes 修订元素构建器。
 纯标准库实现：xml.etree, uuid, datetime
 """
 
+import copy
 import uuid
 from datetime import datetime, timezone
 from xml.etree import ElementTree as ET
@@ -40,28 +41,33 @@ class RevisionBuilder:
         """手动设置起始 id（用于避免与文档中已有修订冲突）。"""
         self._id_counter = start
 
-    def create_run(self, text: str, preserve_space: bool = True) -> ET.Element:
+    def create_run(self, text: str, preserve_space: bool = True, rPr: ET.Element | None = None) -> ET.Element:
         """
         创建一个 <w:r> 元素，包含 <w:rPr>（可选）和 <w:t>。
 
         Args:
             text: 文本内容。
             preserve_space: 是否在 <w:t> 上设置 xml:space="preserve"。
+            rPr: 可选的 <w:rPr> 元素，用于继承原始 run 的格式（字体、字号等）。
+                 会被 deepcopy 后插入到新 run 中。
         """
         r = ET.Element(f"{W}r")
+        if rPr is not None:
+            r.append(copy.deepcopy(rPr))
         t = ET.SubElement(r, f"{W}t")
         t.text = text
         if preserve_space and (text.startswith(" ") or text.endswith(" ") or "  " in text):
             t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
         return r
 
-    def create_ins(self, text: str, ins_id: int | None = None) -> ET.Element:
+    def create_ins(self, text: str, ins_id: int | None = None, rPr: ET.Element | None = None) -> ET.Element:
         """
         创建一个 <w:ins> 元素，内部包含一个 <w:r><w:t>text</w:t></w:r>。
 
         Args:
             text: 要插入的文本。
             ins_id: 修订 id；None 则自动分配。
+            rPr: 可选的 <w:rPr> 元素，用于继承格式。
 
         Returns:
             <w:ins> Element
@@ -74,17 +80,18 @@ class RevisionBuilder:
         ins.set(f"{W}author", self.author)
         ins.set(f"{W}date", _now_iso())
 
-        r = self.create_run(text)
+        r = self.create_run(text, rPr=rPr)
         ins.append(r)
         return ins
 
-    def create_del(self, text: str, del_id: int | None = None) -> ET.Element:
+    def create_del(self, text: str, del_id: int | None = None, rPr: ET.Element | None = None) -> ET.Element:
         """
         创建一个 <w:del> 元素，内部包含一个 <w:r><w:delText>text</w:delText></w:r>。
 
         Args:
             text: 要删除的文本。
             del_id: 修订 id；None 则自动分配。
+            rPr: 可选的 <w:rPr> 元素，用于继承格式。
 
         Returns:
             <w:del> Element
@@ -98,6 +105,8 @@ class RevisionBuilder:
         deletion.set(f"{W}date", _now_iso())
 
         r = ET.SubElement(deletion, f"{W}r")
+        if rPr is not None:
+            r.append(copy.deepcopy(rPr))
         del_text = ET.SubElement(r, f"{W}delText")
         del_text.text = text
         if text.startswith(" ") or text.endswith(" ") or "  " in text:
@@ -105,7 +114,7 @@ class RevisionBuilder:
         return deletion
 
     def create_ins_with_multiple_runs(
-        self, text_segments: list[str], ins_id: int | None = None
+        self, text_segments: list[str], ins_id: int | None = None, rPr: ET.Element | None = None
     ) -> ET.Element:
         """
         创建一个 <w:ins> 元素，内部包含多个 <w:r>（用于保留原始格式片段）。
@@ -113,6 +122,7 @@ class RevisionBuilder:
         Args:
             text_segments: 文本片段列表，每个片段对应一个 <w:r><w:t>。
             ins_id: 修订 id；None 则自动分配。
+            rPr: 可选的 <w:rPr> 元素，用于继承格式。
         """
         if ins_id is None:
             ins_id = self._next_id()
@@ -123,12 +133,12 @@ class RevisionBuilder:
         ins.set(f"{W}date", _now_iso())
 
         for seg in text_segments:
-            r = self.create_run(seg)
+            r = self.create_run(seg, rPr=rPr)
             ins.append(r)
         return ins
 
     def create_del_with_multiple_runs(
-        self, text_segments: list[str], del_id: int | None = None
+        self, text_segments: list[str], del_id: int | None = None, rPr: ET.Element | None = None
     ) -> ET.Element:
         """
         创建一个 <w:del> 元素，内部包含多个 <w:r><w:delText>。
@@ -136,6 +146,7 @@ class RevisionBuilder:
         Args:
             text_segments: 文本片段列表。
             del_id: 修订 id；None 则自动分配。
+            rPr: 可选的 <w:rPr> 元素，用于继承格式。
         """
         if del_id is None:
             del_id = self._next_id()
@@ -147,6 +158,8 @@ class RevisionBuilder:
 
         for seg in text_segments:
             r = ET.SubElement(deletion, f"{W}r")
+            if rPr is not None:
+                r.append(copy.deepcopy(rPr))
             del_text = ET.SubElement(r, f"{W}delText")
             del_text.text = seg
             if seg.startswith(" ") or seg.endswith(" ") or "  " in seg:
@@ -154,21 +167,32 @@ class RevisionBuilder:
             deletion.append(r)
         return deletion
 
-    def create_paragraph_with_ins(self, text: str, para_id: int | None = None) -> ET.Element:
+    def create_paragraph_with_ins(
+        self,
+        text: str,
+        para_id: int | None = None,
+        pPr: ET.Element | None = None,
+        rPr: ET.Element | None = None,
+    ) -> ET.Element:
         """
         创建一个全新段落 <w:p>，内容为插入修订。
 
         Args:
             text: 段落文本。
             para_id: 段落属性中的 <w:pPr><w:pId> 值；None 则不设置。
+            pPr: 可选的 <w:pPr> 元素，用于继承段落格式（样式、缩进、编号等）。
+                 会被 deepcopy 后插入到新段落中。
+            rPr: 可选的 <w:rPr> 元素，用于继承字符格式。
         """
         p = ET.Element(f"{W}p")
-        if para_id is not None:
-            pPr = ET.SubElement(p, f"{W}pPr")
-            pId = ET.SubElement(pPr, f"{W}pId")
+        if pPr is not None:
+            p.append(copy.deepcopy(pPr))
+        elif para_id is not None:
+            new_pPr = ET.SubElement(p, f"{W}pPr")
+            pId = ET.SubElement(new_pPr, f"{W}pId")
             pId.set(f"{W}val", str(para_id))
 
-        ins = self.create_ins(text)
+        ins = self.create_ins(text, rPr=rPr)
         p.append(ins)
         return p
 
@@ -197,9 +221,9 @@ class RevisionBuilder:
         for r in para.iter(f"{W}r"):
             for t in r.iter(f"{W}t"):
                 if t.text == text_to_wrap:
-                    # 在段落中用 <w:ins> 替换这个 <w:r>
+                    original_rPr = r.find(f"{W}rPr")
                     idx = list(para).index(r)
-                    ins = self.create_ins(text_to_wrap)
+                    ins = self.create_ins(text_to_wrap, rPr=original_rPr)
                     para.remove(r)
                     para.insert(idx, ins)
                     return True
@@ -225,8 +249,9 @@ class RevisionBuilder:
         for r in para.iter(f"{W}r"):
             for t in r.iter(f"{W}t"):
                 if t.text == text_to_wrap:
+                    original_rPr = r.find(f"{W}rPr")
                     idx = list(para).index(r)
-                    deletion = self.create_del(text_to_wrap)
+                    deletion = self.create_del(text_to_wrap, rPr=original_rPr)
                     para.remove(r)
                     para.insert(idx, deletion)
                     return True
@@ -260,10 +285,11 @@ class RevisionBuilder:
         for r in para.iter(f"{W}r"):
             for t in r.iter(f"{W}t"):
                 if t.text and old_text in t.text:
+                    original_rPr = r.find(f"{W}rPr")
                     idx = list(para).index(r)
-                    # 创建 del + ins
-                    deletion = self.create_del(old_text)
-                    ins = self.create_ins(new_text)
+                    # 创建 del + ins（继承原始格式）
+                    deletion = self.create_del(old_text, rPr=original_rPr)
+                    ins = self.create_ins(new_text, rPr=original_rPr)
                     para.remove(r)
                     para.insert(idx, deletion)
                     para.insert(idx + 1, ins)
@@ -285,4 +311,31 @@ class RevisionBuilder:
                         max_id = max(max_id, int(rid))
                     except ValueError:
                         pass
+        return max_id
+
+    @staticmethod
+    def find_max_annotation_id(doc_root: ET.Element) -> int:
+        """
+        扫描文档中所有注释类型的 w:id，返回全局最大值。
+        包括 ins、del、bookmarkStart/End、commentRangeStart/End、commentReference。
+        OOXML 规范要求 w:id 在所有注释类型中全局唯一。
+        """
+        max_id = 0
+        for tag_suffix in ("ins", "del", "bookmarkStart", "bookmarkEnd",
+                           "commentRangeStart", "commentRangeEnd"):
+            for el in doc_root.iter(f"{W}{tag_suffix}"):
+                rid = el.get(f"{W}id")
+                if rid is not None:
+                    try:
+                        max_id = max(max_id, int(rid))
+                    except ValueError:
+                        pass
+        # commentReference 在 <w:r> 内部
+        for el in doc_root.iter(f"{W}commentReference"):
+            rid = el.get(f"{W}id")
+            if rid is not None:
+                try:
+                    max_id = max(max_id, int(rid))
+                except ValueError:
+                    pass
         return max_id

@@ -25,15 +25,21 @@ NAMESPACES = {
 for prefix, uri in NAMESPACES.items():
     ET.register_namespace(prefix, uri)
 
-# 额外注册常见命名空间
+# 额外注册 Word XML 中实际使用的命名空间前缀
+# 注意：不注册 Content_Types 和 Relationships 的 URI，
+# 因为这些文件要求使用默认（无前缀）命名空间，
+# 而 ET.register_namespace 是全局的，会导致序列化时添加前缀。
 EXTRA_NS = {
-    "ct": "http://schemas.openxmlformats.org/package/2006/content-types",
-    "rel": "http://schemas.openxmlformats.org/package/2006/relationships",
     "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
     "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",
-    "ve": "http://schemas.openxmlformats.org/markup-compatibility/2006",
     "o": "urn:schemas-microsoft-com:office:office",
     "v": "urn:schemas-microsoft-com:vml",
+    "wpc": "http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas",
+    "cx": "http://schemas.microsoft.com/office/drawing/2014/chartex",
+    "cx1": "http://schemas.microsoft.com/office/drawing/2015/9/8/chartex",
+    "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
+    "wne": "http://schemas.microsoft.com/office/word/2006/wordml",
+    "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
 }
 for prefix, uri in EXTRA_NS.items():
     ET.register_namespace(prefix, uri)
@@ -69,6 +75,7 @@ class DocxOperator:
         self._tree: dict[str, ET.ElementTree] = {}
         self._raw: dict[str, bytes] = {}
         self._namelist: list[str] = []
+        self._modified: set[str] = set()   # 仅被修改的 XML 才需要重新序列化
         self._load()
 
     def _load(self) -> None:
@@ -105,6 +112,16 @@ class DocxOperator:
         tree = self._tree.get("word/settings.xml")
         return tree.getroot() if tree else None
 
+    def get_comments_extended(self) -> ET.Element | None:
+        """返回 commentsExtended.xml 的根元素；如不存在则返回 None。"""
+        tree = self._tree.get("word/commentsExtended.xml")
+        return tree.getroot() if tree else None
+
+    def get_styles(self) -> ET.Element | None:
+        """返回 styles.xml 的根元素；如不存在则返回 None。"""
+        tree = self._tree.get("word/styles.xml")
+        return tree.getroot() if tree else None
+
     def get_body(self) -> ET.Element:
         """返回 document.xml 中的 <w:body>。"""
         root = self.get_document()
@@ -128,46 +145,58 @@ class DocxOperator:
     def set_document(self, root: ET.Element) -> None:
         """替换 document.xml 的内容。"""
         self._tree["word/document.xml"] = ET.ElementTree(root)
+        self._modified.add("word/document.xml")
 
     def set_comments(self, root: ET.Element) -> None:
         """替换或新增 comments.xml 的内容。"""
         self._tree["word/comments.xml"] = ET.ElementTree(root)
+        self._modified.add("word/comments.xml")
         if "word/comments.xml" not in self._namelist:
             self._namelist.append("word/comments.xml")
 
     def set_settings(self, root: ET.Element) -> None:
         """替换 settings.xml 的内容。"""
         self._tree["word/settings.xml"] = ET.ElementTree(root)
+        self._modified.add("word/settings.xml")
+
+    def set_comments_extended(self, root: ET.Element) -> None:
+        """替换或新增 commentsExtended.xml 的内容。"""
+        self._tree["word/commentsExtended.xml"] = ET.ElementTree(root)
+        self._modified.add("word/commentsExtended.xml")
+        if "word/commentsExtended.xml" not in self._namelist:
+            self._namelist.append("word/commentsExtended.xml")
 
     # ------------------------------------------------------------------
     # 辅助功能
     # ------------------------------------------------------------------
 
-    def ensure_comments_part(self) -> None:
+    def mark_modified(self, part_name: str) -> None:
+        """手动标记某个 part 已修改，使 save() 重新序列化它。
+        用于通过 get_document() 获取根元素后就地修改的情况。
         """
-        确保文档包含 comments.xml 关系。
-        如果 word/_rels/document.xml.rels 中没有 comments 关系，则添加。
-        """
+        self._modified.add(part_name)
+
+    def _ensure_rels_entry(self, rel_type: str, target: str) -> None:
+        """确保 word/_rels/document.xml.rels 中存在指定类型的关系。"""
         rels_path = "word/_rels/document.xml.rels"
         rels_tree = self._tree.get(rels_path)
+        ns = "http://schemas.openxmlformats.org/package/2006/relationships"
+
         if rels_tree is None:
-            # 创建新的 rels 文件
-            root = ET.Element(
-                "{http://schemas.openxmlformats.org/package/2006/relationships}Relationships"
-            )
+            root = ET.Element(f"{{{ns}}}Relationships")
             rels_tree = ET.ElementTree(root)
             self._tree[rels_path] = rels_tree
-            self._namelist.append(rels_path)
+            if rels_path not in self._namelist:
+                self._namelist.append(rels_path)
         else:
             root = rels_tree.getroot()
 
-        ns = "http://schemas.openxmlformats.org/package/2006/relationships"
-        # 检查是否已有 comments 关系
+        # 检查是否已存在
         for rel in root.iter(f"{{{ns}}}Relationship"):
-            if rel.get("Type") == "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments":
-                return
+            if rel.get("Type") == rel_type:
+                return  # 已存在，无需修改
 
-        # 计算新的 rId
+        # 计算新 rId
         existing_ids = []
         for rel in root.iter(f"{{{ns}}}Relationship"):
             rid = rel.get("Id", "")
@@ -180,11 +209,16 @@ class DocxOperator:
 
         rel = ET.SubElement(root, f"{{{ns}}}Relationship")
         rel.set("Id", f"rId{new_id}")
-        rel.set(
-            "Type",
+        rel.set("Type", rel_type)
+        rel.set("Target", target)
+        self._modified.add(rels_path)  # 标记已修改
+
+    def ensure_comments_part(self) -> None:
+        """确保文档包含 comments.xml 关系。"""
+        self._ensure_rels_entry(
             "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments",
+            "comments.xml"
         )
-        rel.set("Target", "comments.xml")
 
     def ensure_track_changes_enabled(self) -> None:
         """
@@ -230,6 +264,10 @@ class DocxOperator:
         """
         将修改后的内容重新打包为 DOCX。
 
+        仅对 _modified 中的 XML part 重新序列化，其余保留原始字节。
+        对修改的 XML 保留原始 XML 声明和根元素开始标签（含所有命名空间声明），
+        避免 ElementTree 丢弃命名空间导致 Word 报错。
+
         Args:
             output_path: 输出路径；None 则覆盖原文件。
             backup: 是否先备份原文件。
@@ -244,25 +282,59 @@ class DocxOperator:
             backup_path = self.docx_path.with_suffix(f".backup_{ts}.docx")
             shutil.copy2(self.docx_path, backup_path)
 
-        # 确保 comments 关系存在
-        if "word/comments.xml" in self._tree:
+        # 确保 comments / commentsExtended 关系存在
+        if "word/comments.xml" in self._modified:
             self.ensure_comments_part()
+        if "word/commentsExtended.xml" in self._modified:
+            self._ensure_rels_entry(
+                "http://schemas.microsoft.com/office/2011/relationships/commentsExtended",
+                "commentsExtended.xml"
+            )
+
+        import io
 
         with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
             for name in self._namelist:
-                if name in self._tree:
-                    # XML 文件：序列化 ElementTree
-                    tree = self._tree[name]
-                    # 添加 XML 声明
-                    import io
-                    buf = io.BytesIO()
-                    tree.write(buf, encoding="UTF-8", xml_declaration=True)
-                    zf.writestr(name, buf.getvalue())
+                if name in self._modified and name in self._tree:
+                    xml_bytes = self._serialize_preserving_header(name)
+                    zf.writestr(name, xml_bytes)
                 else:
-                    # 非 XML 文件：保持原始字节
                     zf.writestr(name, self._raw[name])
 
         return str(target)
+
+    def _serialize_preserving_header(self, name: str) -> bytes:
+        """
+        序列化已修改的 XML，但保留原始 XML 声明和根元素开始标签。
+
+        ElementTree 序列化时会丢弃"未使用"的命名空间声明，
+        但 Word 要求根元素上的所有原始 xmlns 必须保留。
+        方法：用原始文件的 header（XML 声明 + 根开始标签）替换 ET 生成的。
+        """
+        import io, re
+
+        tree = self._tree[name]
+        buf = io.BytesIO()
+        tree.write(buf, encoding="UTF-8", xml_declaration=True)
+        new_xml = buf.getvalue().decode("utf-8")
+
+        # 如果有原始字节，提取原始 header 替换 ET 生成的
+        if name in self._raw:
+            orig_xml = self._raw[name].decode("utf-8")
+
+            # 正则提取: XML 声明 + 根元素开始标签
+            # 匹配 <?xml ...?> 然后 <tagname attr1="..." attr2="..." ...>
+            header_re = re.compile(r'(<\?xml[^?]*\?>\s*<[^>]+>)', re.DOTALL)
+
+            orig_match = header_re.search(orig_xml)
+            new_match = header_re.search(new_xml)
+
+            if orig_match and new_match:
+                # 原始 header + ET 生成的 body（根开始标签之后的内容）
+                return (orig_match.group(1) + new_xml[new_match.end():]).encode("utf-8")
+
+        # 回退：直接返回 ET 输出
+        return new_xml.encode("utf-8")
 
     # ------------------------------------------------------------------
     # 校验

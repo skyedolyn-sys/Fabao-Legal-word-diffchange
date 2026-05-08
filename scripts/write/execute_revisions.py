@@ -17,6 +17,7 @@ Usage:
 """
 
 import argparse
+import copy
 import json
 import subprocess
 import sys
@@ -44,7 +45,14 @@ class RevisionExecutor:
     def __init__(self, docx_path: str, author: str = "Moonshot Legal"):
         self.op = DocxOperator(docx_path)
         self.builder = RevisionBuilder(author=author)
-        self.injector = CommentInjector(author=author)
+
+        # 动态查找批注样式 ID
+        comment_text_style, comment_ref_style = self._find_comment_styles()
+        self.injector = CommentInjector(
+            author=author,
+            comment_text_style=comment_text_style,
+            comment_ref_style=comment_ref_style,
+        )
         self.validator = DocumentValidator(self.op)
         self.author = author
         self.results = []
@@ -52,15 +60,58 @@ class RevisionExecutor:
         # 同步起始 id，避免与文档中已有修订/批注冲突
         self._sync_ids()
 
-    def _sync_ids(self) -> None:
-        """扫描文档中已有的修订和批注，设置起始 id。"""
-        doc_root = self.op.get_document()
-        max_rev_id = self.builder.find_max_revision_id(doc_root)
-        self.builder.set_start_id(max_rev_id)
+    def _find_comment_styles(self) -> tuple[str, str]:
+        """从 styles.xml 查找 annotation text 和 annotation reference 的 styleId。"""
+        styles_root = self.op.get_styles()
+        text_style = "7"  # 默认值
+        ref_style = "17"  # 默认值
 
+        if styles_root is not None:
+            for s in styles_root.iter(f"{W}style"):
+                name_el = s.find(f"{W}name")
+                if name_el is None:
+                    continue
+                name_val = name_el.get(f"{W}val", "").lower()
+                sid = s.get(f"{W}styleId", "")
+                if name_val == "annotation text" and sid:
+                    text_style = sid
+                elif name_val == "annotation reference" and sid:
+                    ref_style = sid
+
+        return text_style, ref_style
+
+    def _sync_ids(self) -> None:
+        """
+        扫描文档中已有的所有注释类型，设置全局唯一的起始 id。
+        OOXML 规范要求 w:id 在 ins/del/bookmark/commentRange 中全局唯一。
+        """
+        doc_root = self.op.get_document()
+        max_annotation_id = self.builder.find_max_annotation_id(doc_root)
+
+        # 也检查 comments.xml 中的 id
         comments_root = self.op.get_comments()
         max_comment_id = self.injector.find_max_comment_id(comments_root)
-        self.injector.set_start_id(max_comment_id + 1)
+
+        # 统一起始点：取所有来源的最大值
+        # builder 语义: set_start_id(X) 后 _next_id() 返回 X+1
+        # injector 语义: set_start_id(X) 后 _alloc_id() 返回 X
+        global_max = max(max_annotation_id, max_comment_id)
+        self.builder.set_start_id(global_max)
+        self.injector.set_start_id(global_max + 1)
+
+    def _cross_sync_ids(self) -> None:
+        """
+        在 builder 和 injector 之间同步 ID 计数器，确保全局唯一。
+
+        语义差异：
+        - builder._id_counter = 最后分配的 ID（_next_id 返回 counter+1）
+        - injector._next_comment_id = 下一个待分配 ID（_alloc_id 返回当前值）
+        """
+        builder_last_used = self.builder._id_counter
+        injector_last_used = self.injector._next_comment_id - 1
+        last_used = max(builder_last_used, injector_last_used)
+        self.builder.set_start_id(last_used)
+        self.injector.set_start_id(last_used + 1)
 
     def execute(self, write_plan: dict, dry_run: bool = False) -> dict:
         """
@@ -127,6 +178,9 @@ class RevisionExecutor:
                 result["status"] = "failed"
                 result["error"] = f"执行异常: {str(e)}"
                 failed += 1
+
+            # 同步两个计数器，确保全局唯一
+            self._cross_sync_ids()
 
             self.results.append(result)
 
@@ -199,8 +253,175 @@ class RevisionExecutor:
         # 仍有多匹配，选第一个
         return candidates[0][0], candidates[0][1]
 
+    # ------------------------------------------------------------------
+    # 辅助方法：在单个 run 中执行替换（保留 prefix / suffix）
+    # ------------------------------------------------------------------
+
+    def _replace_single_run(
+        self, para, container, container_idx: int, run, old_text: str, new_text: str
+    ) -> tuple[bool, str]:
+        """
+        在单个 run 中将 old_text 替换为 del + ins。
+
+        如果 run 的文本比 old_text 更长（如包含前缀/后缀标点），
+        会保留 prefix 和 suffix 为独立的 run。
+
+        Args:
+            para: 段落元素。
+            container: run 的直接父元素（para 本身或 <w:ins>/<w:del> 元素）。
+            container_idx: container 在 para.children 中的索引。
+            run: 包含 old_text 的 <w:r> 元素。
+            old_text: 要删除的文本。
+            new_text: 要插入的文本。
+
+        Returns:
+            (success, message)
+        """
+        t = run.find(f"{W}t")
+        run_text = t.text if t is not None else ""
+        original_rPr = run.find(f"{W}rPr")
+
+        pos = run_text.index(old_text)
+        prefix = run_text[:pos]
+        suffix = run_text[pos + len(old_text):]
+
+        # 构建替换元素序列
+        new_elements = []
+        if prefix:
+            new_elements.append(self.builder.create_run(prefix, rPr=original_rPr))
+        new_elements.append(self.builder.create_del(old_text, rPr=original_rPr))
+        new_elements.append(self.builder.create_ins(new_text, rPr=original_rPr))
+        if suffix:
+            new_elements.append(self.builder.create_run(suffix, rPr=original_rPr))
+
+        if container is para:
+            # run 是段落的直接子元素
+            para.remove(run)
+            for j, el in enumerate(new_elements):
+                para.insert(container_idx + j, el)
+        else:
+            # run 在 <w:ins>/<w:del> 内部，需要在段落层级操作
+            # 移除整个 container，在其位置插入新元素
+            para.remove(container)
+            for j, el in enumerate(new_elements):
+                para.insert(container_idx + j, el)
+
+        return True, ""
+
+    # ------------------------------------------------------------------
+    # 辅助方法：跨 run 替换（文本分散在多个连续元素中）
+    # ------------------------------------------------------------------
+
+    def _replace_cross_run(
+        self, para, old_text: str, new_text: str, para_idx: int
+    ) -> tuple[bool, str]:
+        """
+        处理 old_text 分散在多个连续元素中的情况。
+
+        策略：找到包含 old_text 的连续元素范围，将该范围替换为
+        prefix_run + del(old_text) + ins(new_text) + suffix_run。
+        """
+        # 收集所有直接子元素的文本信息
+        children = list(para)
+        child_texts = []  # [(index, element, text, rPr)]
+        for i, child in enumerate(children):
+            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if tag == "r":
+                t = child.find(f"{W}t")
+                txt = t.text if t is not None and t.text else ""
+                rPr = child.find(f"{W}rPr")
+                child_texts.append((i, child, txt, rPr))
+            elif tag in ("ins", "del"):
+                # 收集该元素内所有 run 的文本
+                parts = []
+                first_rPr = None
+                for r in child.iter(f"{W}r"):
+                    t_el = r.find(f"{W}t")
+                    dt_el = r.find(f"{W}delText")
+                    txt = ""
+                    if t_el is not None and t_el.text:
+                        txt = t_el.text
+                    elif dt_el is not None and dt_el.text:
+                        txt = dt_el.text
+                    if txt:
+                        parts.append(txt)
+                    if first_rPr is None:
+                        first_rPr = r.find(f"{W}rPr")
+                combined = "".join(parts)
+                child_texts.append((i, child, combined, first_rPr))
+            # 跳过 pPr、commentRangeStart/End 等
+
+        if not child_texts:
+            return False, "段落中无可用的文本元素"
+
+        # 拼接连续文本，寻找包含 old_text 的窗口
+        concat = "".join(ct[2] for ct in child_texts)
+        if old_text not in concat:
+            return False, f"在段落中未找到可替换的文本: '{old_text[:60]}...'"
+
+        # 定位 old_text 在 concat 中的位置
+        match_start = concat.index(old_text)
+        match_end = match_start + len(old_text)
+
+        # 确定涉及的元素范围
+        cursor = 0
+        first_idx = last_idx = None
+        prefix = suffix = ""
+        ref_rPr = None
+
+        for ct_i, (idx, el, txt, rPr) in enumerate(child_texts):
+            el_start = cursor
+            el_end = cursor + len(txt)
+
+            if el_start <= match_start < el_end and first_idx is None:
+                first_idx = ct_i
+                prefix = txt[:match_start - el_start]
+                if ref_rPr is None:
+                    ref_rPr = rPr
+
+            if el_start < match_end <= el_end:
+                last_idx = ct_i
+                suffix = txt[match_end - el_start:]
+                if ref_rPr is None:
+                    ref_rPr = rPr
+                break
+
+            cursor = el_end
+
+        if first_idx is None or last_idx is None:
+            return False, "无法定位元素范围"
+
+        # 构建替换序列
+        new_elements = []
+        if prefix:
+            new_elements.append(self.builder.create_run(prefix, rPr=ref_rPr))
+        new_elements.append(self.builder.create_del(old_text, rPr=ref_rPr))
+        new_elements.append(self.builder.create_ins(new_text, rPr=ref_rPr))
+        if suffix:
+            new_elements.append(self.builder.create_run(suffix, rPr=ref_rPr))
+
+        # 移除范围内的元素，插入新元素
+        first_para_idx = child_texts[first_idx][0]
+        elements_to_remove = [child_texts[ci][1] for ci in range(first_idx, last_idx + 1)]
+        for el in elements_to_remove:
+            para.remove(el)
+
+        for j, el in enumerate(new_elements):
+            para.insert(first_para_idx + j, el)
+
+        return True, f"跨 run 替换成功（段落 {para_idx}，涉及 {last_idx - first_idx + 1} 个元素）"
+
     def _do_replace_in_text(self, action: dict, location_hint: str) -> tuple[bool, str]:
-        """将 old_text 替换为 new_text（通过 del + ins）。"""
+        """
+        将 old_text 替换为 new_text（通过 del + ins）。
+
+        搜索顺序：
+        1. 直接 <w:r> 子元素（单 run 匹配）
+        2. <w:ins> 内部的 <w:r>（单 run 匹配）
+        3. 跨元素匹配（文本分散在多个连续 run / ins / del 中）
+
+        所有路径均保留 prefix / suffix 和 rPr 格式。
+        """
         old_text = action.get("original_text", "")
         new_text = action.get("replacement_text", "")
 
@@ -208,32 +429,28 @@ class RevisionExecutor:
         if para is None:
             return False, f"未找到包含原文的段落: '{old_text[:60]}...'"
 
-        # 在段落中查找并替换
+        # Pass 1: 直接 <w:r> 子元素
         children = list(para)
         for i, child in enumerate(children):
             tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
             if tag == "r":
                 t = child.find(f"{W}t")
                 if t is not None and t.text and old_text in t.text:
-                    # 找到目标 run，替换为 del + ins
-                    del_el = self.builder.create_del(old_text)
-                    ins_el = self.builder.create_ins(new_text)
-                    para.remove(child)
-                    para.insert(i, del_el)
-                    para.insert(i + 1, ins_el)
-                    return True, ""
+                    return self._replace_single_run(para, para, i, child, old_text, new_text)
 
-        # 文本可能在多个 runs 中分散，尝试简化处理：如果段落包含该文本但未在单个run中找到
-        # 尝试包装包含文本的连续 runs
+        # Pass 2: <w:ins> 内部的单个 run
+        for i, child in enumerate(children):
+            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if tag == "ins":
+                for r in child.iter(f"{W}r"):
+                    t = r.find(f"{W}t")
+                    if t is not None and t.text and old_text in t.text:
+                        return self._replace_single_run(para, child, i, r, old_text, new_text)
+
+        # Pass 3: 跨元素匹配（文本分散在多个 run / ins 中）
         para_text = self.op.get_paragraph_text(para)
         if old_text in para_text:
-            # 尝试更简单的策略：直接在段落末尾添加 del + ins
-            # 这不是理想方案，但至少能工作
-            del_el = self.builder.create_del(old_text)
-            ins_el = self.builder.create_ins(new_text)
-            para.append(del_el)
-            para.append(ins_el)
-            return True, f"警告：文本分散在多个 runs 中，已在段落末尾追加修订标记（段落 {idx}）"
+            return self._replace_cross_run(para, old_text, new_text, idx)
 
         return False, f"在段落中未找到可替换的文本: '{old_text[:60]}...'"
 
@@ -256,8 +473,9 @@ class RevisionExecutor:
             if tag == "r":
                 t = child.find(f"{W}t")
                 if t is not None and t.text == old_text:
-                    # 完全匹配，替换为 del
-                    del_el = self.builder.create_del(old_text)
+                    original_rPr = child.find(f"{W}rPr")
+                    # 完全匹配，替换为 del（继承原始格式）
+                    del_el = self.builder.create_del(old_text, rPr=original_rPr)
                     para.remove(child)
                     para.insert(i, del_el)
                     return True, ""
@@ -292,8 +510,26 @@ class RevisionExecutor:
         )
         return True, f"批注 id={comment_id}"
 
+    @staticmethod
+    def _extract_para_properties(para) -> tuple:
+        """
+        从段落中提取段落属性（pPr）和最后一个 run 的字符属性（rPr）。
+
+        返回 (pPr_element_or_None, rPr_element_or_None)。
+        不做 deepcopy，调用方负责 copy。
+        """
+        pPr = para.find(f"{W}pPr")
+        # 从段落的最后一个 run 提取 rPr
+        last_rPr = None
+        for child in reversed(list(para)):
+            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if tag == "r":
+                last_rPr = child.find(f"{W}rPr")
+                break
+        return pPr, last_rPr
+
     def _do_insert_after_paragraph(self, action: dict, location_hint: str) -> tuple[bool, str]:
-        """在目标段落后插入新段落（带插入修订）。"""
+        """在目标段落后插入新段落（带插入修订）。继承目标段落的样式。"""
         target_text = action.get("target_text", "")
         insertion_text = action.get("insertion_text", "")
 
@@ -308,17 +544,22 @@ class RevisionExecutor:
         if para is None:
             return False, f"未找到目标段落: '{target_text[:60]}...'"
 
+        # 提取目标段落的样式和字符格式
+        source_pPr, source_rPr = self._extract_para_properties(para)
+
         body = self.op.get_body()
-        all_paras = list(body.iter(f"{W}p"))
+        all_children = list(body)
         try:
-            target_idx = all_paras.index(para)
+            target_idx = all_children.index(para)
         except ValueError:
             return False, "无法在文档结构中找到目标段落"
 
-        new_para = self.builder.create_paragraph_with_ins(insertion_text)
+        new_para = self.builder.create_paragraph_with_ins(
+            insertion_text, pPr=source_pPr, rPr=source_rPr
+        )
         # 在 body 中 target_para 之后插入
         body.insert(target_idx + 1, new_para)
-        return True, f"已插入到段落 {idx} 之后"
+        return True, f"已插入到段落 {idx} 之后（继承段落样式）"
 
     def _do_append_to_paragraph(self, action: dict, location_hint: str) -> tuple[bool, str]:
         """在段落末尾追加文本（带插入修订）。"""
@@ -335,12 +576,24 @@ class RevisionExecutor:
         if para is None:
             return False, "未找到目标段落"
 
-        ins_el = self.builder.create_ins(append_text)
+        # 从段落末尾的 run 提取格式
+        last_rPr = None
+        for child in reversed(list(para)):
+            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if tag == "r":
+                last_rPr = child.find(f"{W}rPr")
+                break
+        ins_el = self.builder.create_ins(append_text, rPr=last_rPr)
         para.append(ins_el)
         return True, f"已追加到段落 {idx}"
 
     def save(self, output_path: str | None = None) -> str:
         """保存修改后的文档。"""
+        # 标记就地修改的 XML part 为已修改
+        self.op.mark_modified("word/document.xml")
+        self.op.mark_modified("word/comments.xml")
+        # 同步 commentsExtended.xml（set_comments_extended 内部会标记 modified）
+        self.injector.sync_comments_extended(self.op)
         return self.op.save(output_path=output_path, backup=True)
 
     def post_validate(self, expected_items: int) -> list[str]:
