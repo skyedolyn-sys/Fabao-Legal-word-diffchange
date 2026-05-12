@@ -3,6 +3,22 @@
   "description": "NDA-specific clause type classification patterns. Optimized for Non-Disclosure Agreement / Confidentiality Agreement revision review.",
   "playbook_id": "nda",
   "playbook_name": "保密协议(NDA)审阅Playbook",
+  "perspective_config": {
+    "native_perspective": "乙方",
+    "party_role_mapping": {
+      "甲方_equivalents": {
+        "cn": ["甲方", "披露方"],
+        "en": ["Disclosing Party", "Discloser"]
+      },
+      "乙方_equivalents": {
+        "cn": ["乙方", "接收方"],
+        "en": ["Receiving Party", "Recipient"]
+      }
+    },
+    "special_rules": {
+      "mutual_nda": "双方同时为 Discloser/Recipient 时，以 Moonshot 对手方修订为审阅目标"
+    }
+  },
   "priority_order": [
     "保密信息定义",
     "保密义务",
@@ -13,6 +29,7 @@
     "信息返还",
     "知识产权",
     "协议结构",
+    "争议解决",
     "其他"
   ],
   "patterns": {
@@ -101,16 +118,26 @@
       ],
       "priority": 9
     },
-    "其他": {
+    "争议解决": {
       "keywords": [
         "管辖", "jurisdiction", "法律适用", "governing law",
+        "准据法", "适用法律", "applicable law",
+        "仲裁", "arbitration", "SIAC", "ICC", "HKIAC", "CIETAC",
+        "争议解决", "dispute resolution", "诉讼", "litigation",
+        "法院", "courts", "仲裁地", "seat of arbitration",
+        "仲裁语言", "仲裁规则", "arbitration rules"
+      ],
+      "priority": 10
+    },
+    "其他": {
+      "keywords": [
         "转让", "assignment", "分包", "subcontracting",
         "完整协议", "entire agreement", "修改", "amendment",
         "通知", "notice", "可分割性", "severability",
         "弃权", "waiver", "副本", "counterparts",
         "语言", "language", "标题", "headings"
       ],
-      "priority": 10
+      "priority": 11
     }
   },
   "matching": {

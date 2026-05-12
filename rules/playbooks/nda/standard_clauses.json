@@ -1,0 +1,40 @@
+{
+  "version": "1.0.0",
+  "description": "Moonshot Legal standard clause library for NDA negotiation. These are our preferred positions — use as replacement text when the counterparty's clause triggers a risk rule.",
+  "playbook_id": "nda",
+  "clauses": [
+    {
+      "id": "std_dr_001",
+      "name": "SIAC标准仲裁条款（含准据法与修改限制）",
+      "name_en": "Standard SIAC Arbitration Clause (with Governing Law and Amendment)",
+      "clause_type": "争议解决",
+      "priority": "P0",
+      "triggers": [
+        "对方法律体系管辖（nda_jurisdiction_002）",
+        "仅设诉讼无仲裁（nda_jurisdiction_003）",
+        "对方所在地管辖（nda_jurisdiction_001）"
+      ],
+      "text_en": "This Agreement and any action related thereto shall be governed by and construed in accordance with the laws of Singapore, without regard to its conflict of laws principles. Any disputes arising out of or in connection with this Agreement shall be finally resolved by arbitration administered by the Singapore International Arbitration Centre (\"SIAC\") in accordance with the SIAC Rules then in effect, which rules are deemed to be incorporated by reference into this clause. The seat of arbitration shall be Singapore, and the language of arbitration shall be English. This Agreement may not be amended except by a writing signed by both parties.",
+      "text_cn": "本协议及与之相关的任何行为应受新加坡法律管辖并依据新加坡法律解释，不考虑其法律冲突原则。因本协议产生的或与本协议有关的任何争议应最终通过由新加坡国际仲裁中心（'SIAC'）管理的仲裁解决，仲裁应按照提交仲裁时有效的SIAC仲裁规则进行，该规则被视为通过引用纳入本条款。仲裁地为新加坡，仲裁语言为英语。未经双方书面签署，本协议不得修改。",
+      "covers": [
+        "governing_law",
+        "arbitration",
+        "amendment_restriction"
+      ],
+      "key_terms": {
+        "governing_law": "Laws of Singapore",
+        "arbitration_institution": "SIAC",
+        "arbitration_rules": "SIAC Rules then in effect",
+        "seat": "Singapore",
+        "language": "English",
+        "amendment": "writing signed by both parties"
+      },
+      "usage_notes": "Moonshot 注册地为新加坡，新加坡法 + SIAC 仲裁是我方首选争议解决方案：(1) 与公司注册地一致，法律适用最自然；(2) 新加坡仲裁裁决在《纽约公约》下全球可执行；(3) SIAC 仲裁效率高、程序可预期；(4) 新加坡法律体系稳定、商事判例丰富。谈判时可直接以“我方为新加坡公司，适用新加坡法律为常规做法”为由提出。",
+      "adaptation_guide": {
+        "if_bilateral_nda": "本条款同时覆盖准据法和争议解决，可替换对方模板中分列的 Governing Law + Dispute Resolution 两个条款。如对方模板将二者分列，可合并至 Dispute Resolution 条款并在 Governing Law 条款处加批注交叉引用。",
+        "if_cn_domestic": "如双方均为中国大陆实体，建议改用中国仲裁机构（如 CIETAC/BAC），准据法改为中国法律。",
+        "if_counterparty_resists_singapore": "可退让至香港（HKIAC）+ 香港法，但不接受对方所在地法律体系。注意：新加坡法仍为我方第一优先级，因为 Moonshot 本身是新加坡注册实体。"
+      }
+    }
+  ]
+}

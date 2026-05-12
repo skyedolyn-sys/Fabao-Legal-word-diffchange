@@ -1,0 +1,251 @@
+{
+  "version": "1.0.0",
+  "description": "推广协议（广告代理）专用风险评估规则。甲方（广告主）视角，识别代理商（乙方）修订中对甲方不利的条款。",
+  "playbook_id": "marketing-agency",
+  "risk_levels": {
+    "high": {
+      "label": "强烈反对",
+      "emoji": "🔴",
+      "description": "对甲方有重大不利影响，必须要求修改"
+    },
+    "medium": {
+      "label": "需协商",
+      "emoji": "🟠",
+      "description": "对甲方有一定影响，建议争取更有利条件"
+    },
+    "low": {
+      "label": "可接受",
+      "emoji": "🟢",
+      "description": "对甲方影响较小或有利，可直接接受"
+    }
+  },
+  "rules": [
+    {
+      "id": "mkt_platform_001",
+      "name": "代理平台范围缩减",
+      "applies_to_clause_types": ["平台与服务范围"],
+      "applies_to_revision_types": ["insertion", "deletion"],
+      "patterns": {
+        "insertion": ["仅.*投放", "仅.*平台", "仅限.*平台", "只限于.*平台", "唯一平台", "单一平台", "排除.*平台"],
+        "deletion": ["Meta", "Google", "Facebook", "多平台", "全部平台"]
+      },
+      "risk_level": "high",
+      "rationale": "对方将代理平台范围从多平台缩减为单平台或排除特定平台，限制甲方投放渠道，影响市场覆盖策略"
+    },
+    {
+      "id": "mkt_rebate_001",
+      "name": "返点比例下调",
+      "applies_to_clause_types": ["返点与费用"],
+      "applies_to_revision_types": ["insertion", "deletion"],
+      "patterns": {
+        "insertion": ["降低", "下调", "减少返点", "返点比例", "0%", "零返点"],
+        "deletion": ["x%", "原比例", "原有返点"]
+      },
+      "risk_level": "high",
+      "rationale": "返点比例下调直接增加甲方投放成本，影响预算安排和ROI"
+    },
+    {
+      "id": "mkt_rebate_002",
+      "name": "有效消耗定义收窄",
+      "applies_to_clause_types": ["返点与费用"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": ["不计入", "不可计算", "排除", "不认定为有效", "不属于", "均不计入"]
+      },
+      "risk_level": "medium",
+      "rationale": "收窄有效消耗定义减少甲方可获得返点的基数，变相降低实际返点收益"
+    },
+    {
+      "id": "mkt_liability_001",
+      "name": "乙方免责范围扩大",
+      "applies_to_clause_types": ["违约责任", "平台与服务范围"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": ["不视为.*违约", "不视为乙方违约", "乙方不承担", "乙方无需", "免除乙方", "乙方免责", "乙方不负责"]
+      },
+      "risk_level": "high",
+      "rationale": "对方扩大乙方免责范围，甲方无法就乙方过失（如投放错误、数据作弊、账户管理不善）追责"
+    },
+    {
+      "id": "mkt_liability_002",
+      "name": "删除甲方单方救济权",
+      "applies_to_clause_types": ["违约责任"],
+      "applies_to_revision_types": ["deletion"],
+      "patterns": {
+        "deletion": ["甲方有权暂停", "甲方有权封停", "甲方有权扣除", "甲方有权拒绝支付", "甲方有权终止"]
+      },
+      "risk_level": "high",
+      "rationale": "删除甲方对乙方违约行为的救济手段（暂停服务、扣除款项、拒绝付款等），削弱甲方制衡能力"
+    },
+    {
+      "id": "mkt_payment_001",
+      "name": "增加预付款或保证金",
+      "applies_to_clause_types": ["返点与费用"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": ["预付款", "保证金", "押金", "预付", "提前支付", "先付款", "先充值"]
+      },
+      "risk_level": "high",
+      "rationale": "要求甲方预付或缴纳保证金，增加资金占用成本和对方违约时的资金损失风险"
+    },
+    {
+      "id": "mkt_payment_002",
+      "name": "付款账期延长",
+      "applies_to_clause_types": ["返点与费用"],
+      "applies_to_revision_types": ["insertion", "deletion"],
+      "patterns": {
+        "insertion": ["90日", "90天", "120日", "120天", "6个月", "180天"],
+        "deletion": ["45日", "45天", "30日", "30天"]
+      },
+      "risk_level": "medium",
+      "rationale": "付款账期过长影响甲方现金流管理，且延长期间对方服务质量不可控"
+    },
+    {
+      "id": "mkt_ip_001",
+      "name": "知识产权归属变更为乙方",
+      "applies_to_clause_types": ["知识产权"],
+      "applies_to_revision_types": ["insertion", "deletion"],
+      "patterns": {
+        "insertion": ["归乙方", "乙方所有", "共同所有", "双方共有", "各自所有", "乙方单独所有"],
+        "deletion": ["归甲方", "甲方所有", "甲方单独所有"]
+      },
+      "risk_level": "high",
+      "rationale": "将广告素材知识产权从甲方改为乙方或共有，影响甲方对素材的控制权和后续使用"
+    },
+    {
+      "id": "mkt_indemnity_001",
+      "name": "第三方赔偿范围扩大",
+      "applies_to_clause_types": ["第三方赔偿", "违约责任"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": ["全部费用", "所有损失", "间接损失", "预期利益", "利润损失", "无上限", "无限额", "一切索赔"]
+      },
+      "risk_level": "high",
+      "rationale": "扩大甲方对第三方的赔偿范围（含间接损失、利润损失且无上限），增加不可控法律和财务风险"
+    },
+    {
+      "id": "mkt_service_001",
+      "name": "删除投放效果考核",
+      "applies_to_clause_types": ["平台与服务范围"],
+      "applies_to_revision_types": ["deletion"],
+      "patterns": {
+        "deletion": ["效果数据", "考核标准", "转化率", "点击率", "投放目标", "KPI", "ROI"]
+      },
+      "risk_level": "medium",
+      "rationale": "删除投放效果考核标准，降低乙方服务质量约束，甲方无法量化评估投放效果"
+    },
+    {
+      "id": "mkt_service_002",
+      "name": "删除报告义务",
+      "applies_to_clause_types": ["平台与服务范围"],
+      "applies_to_revision_types": ["deletion"],
+      "patterns": {
+        "deletion": ["日报", "周报", "月报", "报告", "汇报", "交付数据"]
+      },
+      "risk_level": "medium",
+      "rationale": "删除乙方定期报告义务，减少甲方对投放进展和数据的知情权"
+    },
+    {
+      "id": "mkt_term_001",
+      "name": "增加乙方单方终止权",
+      "applies_to_clause_types": ["期限与终止"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": ["乙方有权终止", "乙方有权解除", "乙方可终止", "乙方提前通知即可终止", "乙方有权随时"]
+      },
+      "risk_level": "high",
+      "rationale": "赋予乙方单方终止权而甲方无对等权利，权利义务严重失衡，甲方投放计划可能被单方面中断"
+    },
+    {
+      "id": "mkt_term_002",
+      "name": "删除甲方单方终止权",
+      "applies_to_clause_types": ["期限与终止"],
+      "applies_to_revision_types": ["deletion"],
+      "patterns": {
+        "deletion": ["甲方有权终止", "甲方有权解除", "甲方可终止", "甲方有权随时"]
+      },
+      "risk_level": "high",
+      "rationale": "删除甲方单方终止权，导致甲方被锁定在不利合作中，无法及时止损"
+    },
+    {
+      "id": "mkt_dr_001",
+      "name": "争议解决地不利变更",
+      "applies_to_clause_types": ["争议解决"],
+      "applies_to_revision_types": ["insertion", "deletion"],
+      "patterns": {
+        "insertion": ["新加坡法院", "香港法院", "美国法院", "对方所在地", "乙方所在地", "被告所在地", "原告所在地"],
+        "deletion": ["SHIAC", "上海国际经济贸易仲裁委员会", "中华人民共和国法律"]
+      },
+      "risk_level": "medium",
+      "rationale": "争议解决地或准据法变更为乙方优势法域，增加甲方维权成本和不确定性"
+    },
+    {
+      "id": "mkt_dr_002",
+      "name": "删除仲裁条款",
+      "applies_to_clause_types": ["争议解决"],
+      "applies_to_revision_types": ["deletion", "insertion"],
+      "patterns": {
+        "deletion": ["仲裁", "SHIAC", "仲裁委员会", "仲裁规则"],
+        "insertion": ["诉讼解决", "法院管辖", "向有管辖权的法院", "提起诉讼"]
+      },
+      "risk_level": "medium",
+      "rationale": "删除仲裁条款改为法院诉讼，增加跨境争议解决的复杂度、时间和成本"
+    },
+    {
+      "id": "mkt_gst_001",
+      "name": "GST或税务条款不利变更",
+      "applies_to_clause_types": ["返点与费用"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": ["GST税率调整", "税率由乙方决定", "按乙方适用税率", "税费由甲方全部承担"]
+      },
+      "risk_level": "medium",
+      "rationale": "GST税率或计税方式变更可能导致甲方成本不可控增加"
+    },
+    {
+      "id": "mkt_template_001",
+      "name": "宽泛的乙方免责（模板）",
+      "applies_to_clause_types": ["违约责任", "平台与服务范围"],
+      "applies_to_revision_types": ["existing"],
+      "applies_to_modes": ["template"],
+      "patterns": {
+        "existing": ["乙方不承担", "乙方不负责", "乙方无需", "不视为乙方违约", "乙方免责"]
+      },
+      "risk_level": "high",
+      "rationale": "模板中存在宽泛的乙方免责表述，建议增加限定条件（如平台官方通知+举证义务）"
+    },
+    {
+      "id": "mkt_template_002",
+      "name": "知识产权归属缺失或模糊（模板）",
+      "applies_to_clause_types": ["知识产权"],
+      "applies_to_revision_types": ["existing"],
+      "applies_to_modes": ["template"],
+      "patterns": {
+        "existing": ["未明确", "双方协商", "另行约定", "归制作方", "归创作方"]
+      },
+      "risk_level": "high",
+      "rationale": "模板中未明确广告素材知识产权归甲方所有，建议明确约定为'归甲方单独所有'"
+    },
+    {
+      "id": "mkt_template_003",
+      "name": "返点规则缺失或不完整（模板）",
+      "applies_to_clause_types": ["返点与费用"],
+      "applies_to_revision_types": ["existing"],
+      "applies_to_modes": ["template"],
+      "patterns": {
+        "existing": ["x%", "【%】", "待定", "另行协商", "双方确认后", "空白"]
+      },
+      "risk_level": "medium",
+      "rationale": "返点比例或服务费率未填写具体数值，存在后续争议风险，建议在签署前明确"
+    }
+  ],
+  "scoring": {
+    "multiple_matches": "take_highest",
+    "no_match_default": "low",
+    "confidence_threshold": {
+      "high": 0.8,
+      "medium": 0.5,
+      "low": 0.0
+    }
+  }
+}

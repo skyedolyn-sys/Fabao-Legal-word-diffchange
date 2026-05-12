@@ -39,8 +39,10 @@ def _chinese_counting(n: int) -> str:
     digits = "零一二三四五六七八九"
     if n <= 0:
         return str(n)
-    if n <= 10:
+    if n < 10:
         return digits[n]
+    if n == 10:
+        return "十"
     if n <= 19:
         return f"十{digits[n % 10]}" if n % 10 else "十"
     if n <= 99:
@@ -245,6 +247,11 @@ _RE_ARTICLE = re.compile(
     r'^Article\s+\d+',                                      # Article 1 …
     re.IGNORECASE,
 )
+# English letter / roman / parenthesised numbering
+_RE_LETTER_UPPER = re.compile(r'^[A-Z][.．]\s')                       # A. B. C.
+_RE_LETTER_LOWER_PAREN = re.compile(r'^\([a-z]\)\s')                 # (a) (b) (c)
+_RE_ROMAN_LOWER_PAREN = re.compile(r'^\([ivxlcdm]+\)\s')                  # (i) (ii) (iii)
+_RE_ARABIC_PAREN = re.compile(r'^\(\d+\)\s')                       # (1) (2) (3)
 _RE_APPENDIX = re.compile(
     r'^(附件[一二三四五六七八九十\d]|附录[一二三四五六七八九十\d]'
     r'|Appendix\s*[A-Z\d]|Schedule\s*[A-Z\d]'
@@ -267,6 +274,10 @@ def _scan_doc_patterns(paragraphs: list[dict]) -> dict:
         "has_cn_paren": False,        # （一）
         "has_decimal": False,         # X.X
         "has_article": False,         # Article X
+        "has_letter_upper": False,    # A. B.
+        "has_letter_lower_paren": False,  # (a)
+        "has_roman_lower_paren": False,   # (i)
+        "has_arabic_paren": False,        # (1)
         "has_heading_styles": False,  # Word heading styles
         "has_any_numbering": False,
     }
@@ -290,20 +301,67 @@ def _scan_doc_patterns(paragraphs: list[dict]) -> dict:
             pats["has_decimal"] = True
         if _RE_ARTICLE.match(text):
             pats["has_article"] = True
+        if _RE_LETTER_UPPER.match(text):
+            pats["has_letter_upper"] = True
+        if _RE_LETTER_LOWER_PAREN.match(text):
+            pats["has_letter_lower_paren"] = True
+        if _RE_ROMAN_LOWER_PAREN.match(text):
+            pats["has_roman_lower_paren"] = True
+        if _RE_ARABIC_PAREN.match(text):
+            pats["has_arabic_paren"] = True
     pats["has_any_numbering"] = any([
         pats["has_zhang"], pats["has_tiao"],
         pats["has_cn_ordinal"], pats["has_arabic_ordinal"],
         pats["has_decimal"], pats["has_cn_paren"],
         pats["has_article"],
+        pats["has_letter_upper"], pats["has_letter_lower_paren"],
+        pats["has_roman_lower_paren"], pats["has_arabic_paren"],
     ])
     return pats
 
 
-def _guess_heading_level(text: str, fmt: dict, doc_pats: dict) -> int:
+def _classify_heading_type(text: str) -> str:
+    """Classify a heading text into a type string for ancestor context."""
+    if _RE_APPENDIX.match(text):
+        return "appendix"
+    if _RE_ARTICLE.match(text):
+        return "article"
+    if _RE_ZHANG.match(text):
+        return "zhang"
+    if _RE_TIAO.match(text):
+        return "tiao"
+    if _RE_LETTER_UPPER.match(text):
+        return "letter_upper"
+    if _RE_LETTER_LOWER_PAREN.match(text):
+        return "letter_lower"
+    if _RE_ROMAN_LOWER_PAREN.match(text):
+        return "roman_lower"
+    if _RE_ARABIC_PAREN.match(text):
+        return "arabic_paren"
+    if _RE_CN_ORDINAL.match(text):
+        return "cn_ordinal"
+    if _RE_CN_PAREN.match(text):
+        return "cn_paren"
+    if _RE_DECIMAL.match(text):
+        return "decimal"
+    if _RE_ARABIC_ORDINAL.match(text):
+        return "arabic_ordinal"
+    return "other"
+
+
+def _guess_heading_level(
+    text: str,
+    fmt: dict,
+    doc_pats: dict,
+    ancestor_type: str | None = None,
+    last_heading_fmt: dict | None = None,
+) -> int:
     """Guess heading level from text numbering patterns + visual formatting.
 
     Rules:
     * Numbered patterns (第X章 / 第X条 / 一、 / （一） / X.X) are always active.
+    * English letter / roman / parenthesised patterns use ancestor context
+      to resolve nesting depth.
     * Bold-only fallback fires only when the document has NO numbered patterns.
     * Returns 0 for body text, 1-4 for heading levels.
     """
@@ -352,8 +410,68 @@ def _guess_heading_level(text: str, fmt: dict, doc_pats: dict) -> int:
             return 2
         return 1
 
-    # 附件X → L1 (always, regardless of formatting)
+    # -- English letter / roman / parenthesised patterns --------------------
+    last_fmt = last_heading_fmt or {}
+    curr_indent = fmt.get("indent_left", 0)
+    prev_indent = last_fmt.get("indent_left", 0)
+
+    def _indent_deeper() -> bool:
+        return curr_indent > prev_indent + 200
+
+    # A. / B. / C.
+    if _RE_LETTER_UPPER.match(text):
+        if ancestor_type == "appendix":
+            return 2
+        if ancestor_type == "letter_upper":
+            return 2  # sibling
+        if ancestor_type in ("letter_lower", "roman_lower", "arabic_paren", "decimal", "cn_paren"):
+            return 2  # likely sibling section under same parent (e.g. B. after (g))
+        return 1
+
+    # (a) / (b) / (c)  — but NOT single chars that are valid roman numerals
+    # when the immediate ancestor is roman_lower at the same indent level.
+    if _RE_LETTER_LOWER_PAREN.match(text):
+        # Disambiguate: if this single letter is also a valid roman numeral
+        # and we're inside a roman sequence, treat it as roman continuation.
+        if _RE_ROMAN_LOWER_PAREN.match(text) and ancestor_type == "roman_lower" and not _indent_deeper():
+            # Fall through to roman_lower branch below
+            pass
+        else:
+            if ancestor_type in ("letter_upper", "article", "tiao", "decimal", "cn_ordinal", "arabic_ordinal"):
+                return 3
+            if ancestor_type == "letter_lower":
+                return 4 if _indent_deeper() else 3
+            if ancestor_type == "roman_lower":
+                return 4 if _indent_deeper() else 3
+            if ancestor_type in ("appendix",):
+                return 2
+            return 2
+
+    # (i) / (ii) / (iii) — also catches single-char roman numerals that
+    # fell through from the letter_lower branch above.
+    if _RE_ROMAN_LOWER_PAREN.match(text):
+        if ancestor_type == "letter_lower":
+            return 4
+        if ancestor_type == "roman_lower":
+            return 4
+        if ancestor_type in ("letter_upper", "decimal", "cn_paren", "arabic_ordinal"):
+            return 3
+        return 2
+
+    # (1) / (2) / (3)
+    if _RE_ARABIC_PAREN.match(text):
+        if ancestor_type in ("letter_lower", "cn_paren"):
+            return 4
+        if ancestor_type == "arabic_paren":
+            return 4
+        if ancestor_type in ("letter_upper", "decimal", "cn_ordinal", "arabic_ordinal"):
+            return 3
+        return 2
+
+    # 附件X / Appendix X → L1 (unless nested under another appendix)
     if _RE_APPENDIX.match(text):
+        if ancestor_type == "appendix":
+            return 2
         return 1
 
     # -- Bold fallback (only when NO numbering patterns in whole doc) -----
@@ -370,16 +488,16 @@ def _guess_heading_level(text: str, fmt: dict, doc_pats: dict) -> int:
 def _separate_appendices(clauses: list[dict]) -> tuple[list[dict], list[dict]]:
     """Split clause tree into main body and appendices.
 
-    Once an appendix title is encountered (附件X / Appendix X / etc.),
-    everything from that point onward is treated as appendix content.
+    Only top-level clauses (heading_level == 1) that match appendix patterns
+    are treated as document-level appendices. Nested appendices (e.g. an
+    Appendix inside a DPA clause) remain in the main tree.
     """
     main: list[dict] = []
     appendices: list[dict] = []
-    in_appendix = False
     for clause in clauses:
-        if not in_appendix and _RE_APPENDIX.match(clause.get("title", "").strip()):
-            in_appendix = True
-        if in_appendix:
+        title = clause.get("title", "").strip()
+        level = clause.get("heading_level", 0)
+        if level == 1 and _RE_APPENDIX.match(title):
             appendices.append(clause)
         else:
             main.append(clause)
@@ -685,8 +803,14 @@ def attach_location_paths(clauses: list[dict]) -> None:
             current_path = title
 
         for para in node.get("paragraphs", []):
+            rev_loc = current_path
+            num_prefix = para.get("num_prefix", "")
+            if num_prefix and num_prefix.strip():
+                prefix = num_prefix.strip()
+                if prefix not in current_path:
+                    rev_loc = f"{current_path} > {prefix}" if current_path else prefix
             for rev in para.get("revisions", []):
-                rev["location"] = current_path
+                rev["location"] = rev_loc
 
         for sub in node.get("subclauses", []):
             _walk(sub, current_path)
@@ -840,18 +964,25 @@ def extract_revisions(docx_path: str) -> dict:
 
     # ---- Heading heuristic: enrich paragraphs before building tree ----
     doc_patterns = _scan_doc_patterns(paragraphs)
+    last_heading_type = None
+    last_heading_fmt: dict = {}
     for para in paragraphs:
-        if para["heading_level"] > 0:
-            continue  # already identified via style / outline_level
         text = (para.get("text") or "").strip()
         if not text:
             continue
+        # Update ancestor tracking for already-identified headings
+        if para["heading_level"] > 0:
+            last_heading_type = _classify_heading_type(text)
+            last_heading_fmt = para.get("fmt", {})
+            continue
         fmt = para.get("fmt", {})
-        guessed = _guess_heading_level(text, fmt, doc_patterns)
+        guessed = _guess_heading_level(text, fmt, doc_patterns, last_heading_type, last_heading_fmt)
         if guessed > 0:
             para["heading_level"] = guessed
             para["is_heading"] = True
             para["heading_source"] = "heuristic"
+            last_heading_type = _classify_heading_type(text)
+            last_heading_fmt = fmt
         if _RE_APPENDIX.match(text):
             para["is_appendix_title"] = True
 

@@ -484,7 +484,7 @@ class RevisionExecutor:
 
     def _do_add_comment(self, action: dict, location_hint: str) -> tuple[bool, str]:
         """添加段落级批注。"""
-        comment_text = action.get("comment_text", "")
+        comment_text = action.get("comment_text") or action.get("comment", "")
         target_text = action.get("target_text", "")
 
         # 确定目标段落

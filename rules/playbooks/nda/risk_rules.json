@@ -223,7 +223,7 @@
     {
       "id": "nda_jurisdiction_001",
       "name": "对方所在地管辖",
-      "applies_to_clause_types": ["其他"],
+      "applies_to_clause_types": ["争议解决"],
       "applies_to_revision_types": ["insertion"],
       "patterns": {
         "insertion": [
@@ -234,6 +234,38 @@
       },
       "risk_level": "medium",
       "rationale": "争议解决地点在对方所在地，增加应诉成本"
+    },
+    {
+      "id": "nda_jurisdiction_002",
+      "name": "对方法律体系管辖",
+      "applies_to_clause_types": ["争议解决"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": [
+          "English Law", "laws of England", "courts of England",
+          "英国法", "英格兰法律",
+          "State of New York", "State of California", "State of Delaware",
+          "纽约州法", "加州法", "特拉华州法"
+        ]
+      },
+      "risk_level": "medium",
+      "rationale": "准据法为对方法律体系，与 Moonshot 新加坡注册地不符。应优先适用新加坡法 + SIAC 仲裁标准条款（见 standard_clauses.json → std_dr_001）"
+    },
+    {
+      "id": "nda_jurisdiction_003",
+      "name": "仅设诉讼无仲裁",
+      "applies_to_clause_types": ["争议解决"],
+      "applies_to_revision_types": ["insertion"],
+      "patterns": {
+        "insertion": [
+          "exclusive jurisdiction", "专属管辖",
+          "submit to the jurisdiction", "courts shall have",
+          "litigation", "诉讼解决",
+          "irrevocably submit", "不可撤销地接受"
+        ]
+      },
+      "risk_level": "medium",
+      "rationale": "国际NDA仅设法院诉讼而无仲裁选项，Moonshot 作为新加坡公司应优先适用 SIAC 仲裁。建议提议改为 SIAC 仲裁标准条款（见 standard_clauses.json → std_dr_001）"
     },
     {
       "id": "nda_warranty_001",

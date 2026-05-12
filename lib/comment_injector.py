@@ -106,6 +106,13 @@ class CommentInjector:
         pStyle = ET.SubElement(pPr, f"{W}pStyle")
         pStyle.set(f"{W}val", self.comment_text_style)
 
+        # 批注引用标记 run（Word 要求，否则批注内容不显示）
+        ref_r = ET.SubElement(p, f"{W}r")
+        ref_rPr = ET.SubElement(ref_r, f"{W}rPr")
+        ref_rStyle = ET.SubElement(ref_rPr, f"{W}rStyle")
+        ref_rStyle.set(f"{W}val", self.comment_ref_style)
+        ET.SubElement(ref_r, f"{W}annotationRef")
+
         # 批注文本 run
         r = ET.SubElement(p, f"{W}r")
         t = ET.SubElement(r, f"{W}t")

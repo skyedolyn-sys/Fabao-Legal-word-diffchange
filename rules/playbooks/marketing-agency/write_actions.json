@@ -1,0 +1,187 @@
+{
+  "version": "1.0.0",
+  "description": "推广协议（广告代理）风险规则到写入动作的映射。甲方视角，针对代理商回传修订中的不利条款生成修改建议。",
+  "playbook_id": "marketing-agency",
+  "disposition_definitions": {
+    "mandatory": "规则匹配的修改属于保护甲方核心权益的必改项，默认执行",
+    "negotiable": "规则匹配的修改属于建议性修改，需根据商务谈判节奏灵活处理"
+  },
+  "action_templates": {
+    "mkt_platform_001": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P1 建议修改] 代理平台范围相较模板有所缩减，请业务确认是否仅投放当前平台。如后续有扩展需求，建议保留原有多平台表述或增加补充扩展机制。",
+        "fallback": "在平台范围条款处添加批注，提醒业务确认投放平台范围"
+      },
+      "rationale": "平台范围缩减影响甲方市场覆盖，需业务确认是否为 intentional"
+    },
+    "mkt_rebate_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P0 底线] 返点比例下调将直接增加甲方投放成本，请业务确认该比例是否为双方商务谈判的 final offer。如非 final，建议争取恢复模板原比例或更优条件。",
+        "fallback": "在返点比例处添加批注，标记为需业务谈判确认"
+      },
+      "rationale": "返点比例是核心商务条款，直接影响甲方 ROI"
+    },
+    "mkt_liability_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "如因甲方提供的素材内容被平台方依据其正式发布的平台规则书面认定为违法或侵犯第三方权益，导致推广内容被平台方强制删除的，乙方可免除相应违约责任，但乙方须在知悉删除事实后24小时内向甲方提供平台官方删除通知或凭证，并协助甲方修改素材后重新投放",
+        "fallback": "在乙方免责条款处增加'平台官方书面认定'和'举证+协助整改'的限定条件"
+      },
+      "rationale": "乙方自行解释的免责标准过于宽泛，必须以平台官方规则为准"
+    },
+    "mkt_liability_002": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P0 底线] 甲方单方救济权（如暂停服务、扣除款项、拒绝支付等）被删除，严重削弱甲方在乙方违约时的制衡手段。建议恢复原有救济权利。",
+        "fallback": "在违约责任条款处添加批注，要求恢复甲方救济权"
+      },
+      "rationale": "甲方需保留对乙方违约行为的有效制衡手段"
+    },
+    "mkt_payment_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P0 底线] 增加预付款/保证金要求增加甲方资金占用成本和对方违约时的追偿难度。建议删除该要求，恢复模板原有的按月结算后付款机制。",
+        "fallback": "在付款条款处添加批注，反对预付款/保证金要求"
+      },
+      "rationale": "预付款/保证金对甲方资金安全和风险敞口不利"
+    },
+    "mkt_payment_002": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P1 建议修改] 付款账期延长至{extracted_risky_text}，影响甲方现金流安排。建议争取恢复模板原有的45天账期。",
+        "fallback": "在付款账期处添加批注，建议缩短账期"
+      },
+      "rationale": "账期过长增加甲方资金管理压力"
+    },
+    "mkt_ip_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "应归甲方单独所有",
+        "fallback": "将知识产权归属恢复为甲方单独所有"
+      },
+      "rationale": "广告素材IP归甲方是行业惯例，也是甲方品牌资产的组成部分"
+    },
+    "mkt_indemnity_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "赔偿守约方因违约方违约行为而遭受的直接实际损失",
+        "fallback": "将赔偿范围限定为直接实际损失，删除间接损失和无上限表述"
+      },
+      "rationale": "无上限的第三方赔偿范围使甲方风险敞口不可控"
+    },
+    "mkt_term_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P0 底线] 赋予乙方单方终止权而甲方无对等权利，权利义务严重失衡。建议删除乙方单方终止权，或增加对等条款：甲方亦有权在提前通知后终止本协议。",
+        "fallback": "在终止条款处添加批注，要求权利对等"
+      },
+      "rationale": "单方终止权不对等将导致甲方投放计划面临被中断风险"
+    },
+    "mkt_term_002": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P0 底线] 删除甲方单方终止权将使甲方被锁定在不利合作中，无法及时止损。建议恢复甲方在乙方严重违约时的单方终止权。",
+        "fallback": "在终止条款处添加批注，要求恢复甲方终止权"
+      },
+      "rationale": "甲方必须保留在乙方违约时的止损退出机制"
+    },
+    "mkt_dr_001": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P1 建议修改] 争议解决地或准据法变更为乙方优势法域，增加维权成本。建议维持模板原约定：中华人民共和国法律 + SHIAC仲裁。",
+        "fallback": "在争议解决条款处添加批注，建议维持原管辖约定"
+      },
+      "rationale": "争议解决地对维权成本和结果可预见性有重大影响"
+    },
+    "mkt_dr_002": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P1 建议修改] 删除仲裁条款改为法院诉讼将增加跨境争议解决的复杂度和周期。建议维持SHIAC仲裁条款。",
+        "fallback": "在争议解决条款处添加批注，建议保留仲裁"
+      },
+      "rationale": "仲裁对于跨境争议更高效、保密性更强"
+    },
+    "mkt_template_001": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "{extracted_risky_text}，但乙方仍应承担平台官方书面通知载明的原因之外的过错责任",
+        "fallback": "在乙方免责处增加'平台官方书面认定'的限定"
+      },
+      "rationale": "模板中宽泛的乙方免责需要增加实质性限定条件"
+    },
+    "mkt_template_002": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "replace_in_text",
+        "original_text": "{extracted_risky_text}",
+        "replacement_text": "应归甲方单独所有",
+        "fallback": "明确广告素材知识产权归甲方单独所有"
+      },
+      "rationale": "IP归属必须明确，避免后续权属争议"
+    },
+    "mkt_rebate_002": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P1 建议修改] 有效消耗定义被收窄，更多消耗类型被排除在返点基数外，变相降低甲方可获得的实际返点收益。建议争取恢复模板原定义或协商更合理的计算范围。",
+        "fallback": "在返点定义处添加批注，要求恢复有效消耗范围"
+      },
+      "rationale": "有效消耗收窄减少甲方返点基数，直接影响实际收益"
+    },
+    "mkt_service_001": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P1 建议修改] 投放效果考核标准（如转化率、点击率、ROI等）被删除，降低乙方服务质量约束。建议恢复效果考核条款，确保投放效果可量化评估。",
+        "fallback": "在服务条款处添加批注，要求恢复效果考核"
+      },
+      "rationale": "效果考核是保障投放质量的关键机制，删除后甲方无法量化评估乙方服务"
+    },
+    "mkt_service_002": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P1 建议修改] 乙方定期报告义务（日报/周报/月报）被删除，减少甲方对投放进展和数据的知情权。建议恢复报告义务，确保信息透明。",
+        "fallback": "在服务条款处添加批注，要求恢复报告义务"
+      },
+      "rationale": "定期报告是甲方监控投放进展和数据透明度的必要手段"
+    },
+    "mkt_gst_001": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P1 建议修改] GST税率或计税方式变更可能导致甲方成本不可控增加。建议明确税率上限或锁定当前适用税率，避免乙方单方调整权。",
+        "fallback": "在税务条款处添加批注，要求锁定税率"
+      },
+      "rationale": "税务条款变更可能增加甲方不可控成本，需提前锁定"
+    },
+    "mkt_template_003": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P1 建议修改] 返点比例或服务费率未填写具体数值（如x%、【%】）。存在后续争议风险，建议在签署前明确具体比例并填入合同正文。",
+        "fallback": "在返点条款处添加批注，要求填入具体比例"
+      },
+      "rationale": "空白返点比例是重大商务漏洞，必须在签署前明确"
+    }
+  }
+}

@@ -240,10 +240,12 @@ class DocxOperator:
             tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
             if tag == "trackRevisions":
                 child.set(f"{W}val", "true")
+                self._modified.add("word/settings.xml")
                 return
 
         tr = ET.SubElement(root, f"{W}trackRevisions")
         tr.set(f"{W}val", "true")
+        self._modified.add("word/settings.xml")
 
     def ensure_comments_xml_structure(self) -> ET.Element:
         """
@@ -291,6 +293,9 @@ class DocxOperator:
                 "commentsExtended.xml"
             )
 
+        # 确保新 part 在 [Content_Types].xml 中有 override 声明
+        self._ensure_content_type_overrides()
+
         import io
 
         with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -310,6 +315,7 @@ class DocxOperator:
         ElementTree 序列化时会丢弃"未使用"的命名空间声明，
         但 Word 要求根元素上的所有原始 xmlns 必须保留。
         方法：用原始文件的 header（XML 声明 + 根开始标签）替换 ET 生成的。
+        对 .rels 文件额外处理 ET 自动添加的 ns0: 前缀问题。
         """
         import io, re
 
@@ -317,6 +323,20 @@ class DocxOperator:
         buf = io.BytesIO()
         tree.write(buf, encoding="UTF-8", xml_declaration=True)
         new_xml = buf.getvalue().decode("utf-8")
+
+        # 对 package-level 文件（.rels 和 [Content_Types].xml）：
+        # ElementTree 会将默认命名空间的元素序列化为 ns0: 前缀
+        # 需要全局替换回无前缀形式
+        if name.endswith(".rels"):
+            new_xml = new_xml.replace("ns0:", "")
+            new_xml = new_xml.replace('xmlns:ns0="http://schemas.openxmlformats.org/package/2006/relationships"',
+                                      'xmlns="http://schemas.openxmlformats.org/package/2006/relationships"')
+            return new_xml.encode("utf-8")
+        if name == "[Content_Types].xml":
+            new_xml = new_xml.replace("ns0:", "")
+            new_xml = new_xml.replace('xmlns:ns0="http://schemas.openxmlformats.org/package/2006/content-types"',
+                                      'xmlns="http://schemas.openxmlformats.org/package/2006/content-types"')
+            return new_xml.encode("utf-8")
 
         # 如果有原始字节，提取原始 header 替换 ET 生成的
         if name in self._raw:
@@ -331,10 +351,47 @@ class DocxOperator:
 
             if orig_match and new_match:
                 # 原始 header + ET 生成的 body（根开始标签之后的内容）
-                return (orig_match.group(1) + new_xml[new_match.end():]).encode("utf-8")
+                orig_header = orig_match.group(1)
+                # 修复自闭合根元素：将 /> 转为 >，否则追加子元素后 XML 非法
+                if orig_header.rstrip().endswith('/>'):
+                    orig_header = orig_header.rstrip()[:-2].rstrip() + '>'
+                return (orig_header + new_xml[new_match.end():]).encode("utf-8")
 
         # 回退：直接返回 ET 输出
         return new_xml.encode("utf-8")
+
+    def _ensure_content_type_overrides(self) -> None:
+        """确保 [Content_Types].xml 中包含所有新增 part 的 Override 声明。"""
+        ct_path = "[Content_Types].xml"
+        ct_tree = self._tree.get(ct_path)
+        if ct_tree is None:
+            return
+
+        root = ct_tree.getroot()
+        ns = "http://schemas.openxmlformats.org/package/2006/content-types"
+
+        # 需要注册的 part
+        required_overrides = {
+            "/word/comments.xml": "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml",
+            "/word/commentsExtended.xml": "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml",
+            "/word/settings.xml": "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml",
+        }
+
+        # 收集已存在的 PartName
+        existing = set()
+        for override in root.iter(f"{{{ns}}}Override"):
+            existing.add(override.get("PartName"))
+
+        added = False
+        for part_name, content_type in required_overrides.items():
+            if part_name not in existing and part_name[1:] in self._namelist:
+                override = ET.SubElement(root, f"{{{ns}}}Override")
+                override.set("PartName", part_name)
+                override.set("ContentType", content_type)
+                added = True
+
+        if added:
+            self._modified.add(ct_path)
 
     # ------------------------------------------------------------------
     # 校验

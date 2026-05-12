@@ -1,6 +1,19 @@
 {
   "version": "1.0.0",
   "description": "Clause type classification patterns. Match clause titles (headings) against keywords to determine clause type.",
+  "perspective_config": {
+    "native_perspective": "乙方",
+    "party_role_mapping": {
+      "甲方_equivalents": {
+        "cn": ["甲方"],
+        "en": ["Client", "Customer", "Company", "Buyer", "Purchaser"]
+      },
+      "乙方_equivalents": {
+        "cn": ["乙方"],
+        "en": ["Service Provider", "Contractor", "Consultant", "Vendor", "Seller", "Supplier"]
+      }
+    }
+  },
   "priority_order": [
     "知识产权",
     "违约责任",
