@@ -71,6 +71,7 @@ def generate_write_plan(
     analyzed = engine_output.get("analyzed_revisions", [])
     action_templates = write_actions.get("action_templates", {})
     default_action = write_actions.get("default_action", {})
+    vendor_country = engine_output.get("vendor_country")
 
     items = []
     item_counter = 0
@@ -86,7 +87,7 @@ def generate_write_plan(
         if not matched_rules:
             # 有 risk_level 但没有 matched_rules（理论上不应发生），使用默认动作
             item_counter += 1
-            items.append(_build_item(item_counter, rev, default_action, risk_level))
+            items.append(_build_item(item_counter, rev, default_action, risk_level, vendor_country=vendor_country))
             continue
 
         for rule in matched_rules:
@@ -95,17 +96,18 @@ def generate_write_plan(
             if template is None:
                 # 规则无映射，使用默认动作但保留规则信息
                 item_counter += 1
-                items.append(_build_item(item_counter, rev, default_action, risk_level, rule_id=rule_id))
+                items.append(_build_item(item_counter, rev, default_action, risk_level, rule_id=rule_id, vendor_country=vendor_country))
                 continue
 
             item_counter += 1
-            items.append(_build_item(item_counter, rev, template, risk_level, rule_id=rule_id))
+            items.append(_build_item(item_counter, rev, template, risk_level, rule_id=rule_id, vendor_country=vendor_country))
 
     return {
         "source_engine": "analyze_revisions.py",
         "source_document": engine_output.get("document", ""),
         "playbook": playbook or engine_output.get("playbook", ""),
         "mode": engine_output.get("mode", "revision"),
+        "vendor_country": vendor_country,
         "generation_method": "rule_driven_template",
         "items": items,
         "stats": {
@@ -124,6 +126,7 @@ def _build_item(
     template: dict,
     risk_level: str,
     rule_id: str | None = None,
+    vendor_country: str | None = None,
 ) -> dict:
     """构建单个 write_plan item。"""
     matched_rules = rev.get("matched_rules", [])
@@ -136,6 +139,13 @@ def _build_item(
 
     disposition = template.get("disposition", "negotiable")
     action_template = template.get("action", {})
+
+    # Apply country-specific action variant if available
+    country_variants = template.get("country_variants", {})
+    if vendor_country and vendor_country in country_variants:
+        variant = country_variants[vendor_country]
+        # Merge variant fields into action_template (variant overrides base)
+        action_template = {**action_template, **variant}
 
     # 从 revision 的 context 中提取可能用于填充占位符的文本
     context = rev.get("context", {})

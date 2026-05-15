@@ -182,6 +182,100 @@
         "fallback": "在返点条款处添加批注，要求填入具体比例"
       },
       "rationale": "空白返点比例是重大商务漏洞，必须在签署前明确"
+    },
+    "mkt_tax_001": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P1 建议修改] 银行手续费、中转行费用转嫁给甲方，增加甲方付款成本。根据Moonshot财务政策，银行费用由收款方（乙方）承担，以确保到账金额等于发票金额。建议修改为由乙方承担或各承担己方银行费用。",
+        "fallback": "在银行费用条款处添加批注，要求由乙方承担"
+      },
+      "rationale": "银行手续费转嫁给甲方增加付款成本，行业惯例由收款方承担"
+    },
+    "mkt_tax_002": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P0 底线] 将代扣代缴/预提税（withholding tax）义务转嫁给甲方，显著增加甲方税务合规成本，且涉及跨境税务申报义务。根据Moonshot财务政策，各方自行承担所在地税款，甲方无代扣代缴义务。建议删除此条款。",
+        "fallback": "在税务条款处添加批注，反对代扣代缴义务"
+      },
+      "country_variants": {
+        "US": {
+          "comment_text": "[P0 底线] US乙方要求甲方代扣代缴美国预提税（US withholding tax），显著增加甲方跨境税务合规成本及申报义务。根据Moonshot财务政策，推广服务不涉及特许权使用费（royalty），各方自行承担所在地税款，甲方无代扣代缴义务。建议删除此条款，或明确服务性质不适用withholding tax。",
+          "fallback": "在税务条款处添加批注，反对US预提税代扣义务"
+        }
+      },
+      "rationale": "代扣代缴义务转嫁给甲方增加合规成本和操作复杂度"
+    },
+    "mkt_tax_003": {
+      "disposition": "mandatory",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P0 底线] 将服务定义为royalty/特许权使用费/IP许可，可能触发预提税（withholding tax）义务，大幅增加甲方税务负担。推广代理服务应明确定性为'营销服务'（marketing services），不涉及知识产权转让或许可。建议修改为服务性质条款。",
+        "fallback": "在服务定性条款处添加批注，要求明确为服务而非royalty"
+      },
+      "country_variants": {
+        "US": {
+          "comment_text": "[P0 底线] 将服务定义为royalty/特许权使用费/IP许可，可能触发US withholding tax（税率可达30%，即使treaty减免也增加合规负担）。根据US-Singapore tax treaty及Moonshot财务政策，推广代理服务应明确定性为'营销服务'（marketing services），不涉及IP转让或许可，从而适用服务条款而非royalty条款。建议修改为服务性质条款。",
+          "fallback": "在服务定性条款处添加批注，要求明确为服务以适用US-SG treaty服务条款"
+        },
+        "HK": {
+          "comment_text": "[P0 底线] 将服务定义为royalty/特许权使用费/IP许可，可能触发预提税义务。根据HK-Singapore tax treaty及Moonshot财务政策，推广代理服务应明确定性为'营销服务'（marketing services），不涉及知识产权转让或许可。建议修改为服务性质条款。",
+          "fallback": "在服务定性条款处添加批注，要求明确为服务而非royalty"
+        }
+      },
+      "rationale": "服务定性为royalty可能触发预提税，大幅增加甲方税务负担"
+    },
+    "mkt_tax_004": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P1 建议修改] 删除税务发票具体要求可能导致甲方无法获得合规发票进行税务抵扣和付款审批。根据Moonshot财务政策，发票应载明乙方税务注册号、法定名称、注册地址等必要信息。建议恢复发票合规要求条款。",
+        "fallback": "在发票条款处添加批注，要求恢复发票合规要求"
+      },
+      "country_variants": {
+        "SG": {
+          "comment_text": "[P1 建议修改] 删除税务发票具体要求可能导致甲方无法获得合规发票进行GST进项税抵扣和付款审批。根据Moonshot财务政策及IRAS要求，SG乙方发票应载明GST注册号、法定名称、注册地址、发票日期及含税/不含税金额 breakdown。建议恢复发票合规要求条款。",
+          "fallback": "在发票条款处添加批注，要求恢复IRAS合规发票要求"
+        },
+        "HK": {
+          "comment_text": "[P1 建议修改] 删除税务发票具体要求可能导致甲方无法获得合规发票进行付款审批。根据Moonshot财务政策，HK乙方发票应载明香港商业登记号码（BRN）、法定名称、注册地址等必要信息。建议恢复发票合规要求条款。",
+          "fallback": "在发票条款处添加批注，要求恢复HK BRN发票要求"
+        },
+        "US": {
+          "comment_text": "[P1 建议修改] 删除税务发票具体要求可能影响甲方付款审批及税务合规。根据Moonshot财务政策，US乙方应提供完整税务发票（载明EIN或SSN等税号），并配合提供W-8BEN-E（或W-9）等税务表格以支持付款合规和IRS申报。建议恢复发票及税务表格要求。",
+          "fallback": "在发票条款处添加批注，要求恢复US税务合规文件要求"
+        }
+      },
+      "rationale": "税务发票要求缺失影响甲方税务抵扣和付款审批"
+    },
+    "mkt_tax_005": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P1 建议修改] 境外乙方适用reverse charge机制下，甲方需自行申报GST。如甲方为GST注册公司可抵扣进项税额；如未注册，则实际税负增加。请确认甲方GST注册状态，并建议在合同中明确乙方需提供有效税务发票以支持进项抵扣。",
+        "fallback": "在GST条款处添加批注，提醒确认reverse charge影响"
+      },
+      "country_variants": {
+        "US": {
+          "comment_text": "[P1 建议修改] US乙方作为非SG注册公司，其服务适用Singapore reverse charge（或Overseas Vendor Registration, OVR）机制。如甲方为GST注册公司，可自行申报并抵扣进项税；如未注册，则需缴纳GST且无法抵扣，实际税负增加。请确认甲方GST注册状态，并建议合同中明确US乙方需提供有效税务发票以支持进项抵扣申报。",
+          "fallback": "在GST条款处添加批注，提醒确认US乙方reverse charge影响"
+        },
+        "HK": {
+          "comment_text": "[P1 建议修改] HK乙方作为非SG注册公司，其服务适用Singapore reverse charge机制。如甲方为GST注册公司，可自行申报并抵扣进项税；如未注册，则需缴纳GST且无法抵扣，实际税负增加。请确认甲方GST注册状态，并建议合同中明确HK乙方需提供有效税务发票以支持进项抵扣申报。",
+          "fallback": "在GST条款处添加批注，提醒确认HK乙方reverse charge影响"
+        }
+      },
+      "rationale": "reverse charge机制下甲方税务处理需根据注册状态确认"
+    },
+    "mkt_tax_006": {
+      "disposition": "negotiable",
+      "action": {
+        "type": "add_comment",
+        "comment_text": "[P1 建议修改] 汇率由乙方单方决定或汇率风险全部转嫁给甲方，可能导致实际支付金额不可控。建议约定固定汇率基准（如付款当日中国银行/新加坡银行中间价）或双方认可的外汇牌价来源，并明确汇率波动超过一定比例时的调整机制。",
+        "fallback": "在汇率条款处添加批注，要求约定公平汇率机制"
+      },
+      "rationale": "汇率风险单方面转嫁导致甲方支付金额不可控"
     }
   }
 }

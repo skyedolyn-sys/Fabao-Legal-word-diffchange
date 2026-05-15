@@ -298,13 +298,30 @@ class DocxOperator:
 
         import io
 
+        # 构建写入顺序：[Content_Types].xml 必须在 ZIP 中排第一位
+        # 某些 Word 版本要求 [Content_Types].xml 是 ZIP 中的第一个条目
+        ordered_namelist = list(self._namelist)
+        if "[Content_Types].xml" in ordered_namelist:
+            ordered_namelist.remove("[Content_Types].xml")
+            ordered_namelist.insert(0, "[Content_Types].xml")
+
+        # 确保 _modified 中的文件都在 namelist 中（防止新创建的文件遗漏）
+        for name in self._modified:
+            if name not in ordered_namelist:
+                ordered_namelist.append(name)
+
         with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
-            for name in self._namelist:
+            for name in ordered_namelist:
                 if name in self._modified and name in self._tree:
                     xml_bytes = self._serialize_preserving_header(name)
                     zf.writestr(name, xml_bytes)
-                else:
+                elif name in self._raw:
                     zf.writestr(name, self._raw[name])
+                else:
+                    # 兜底：_modified 中有但 _raw 中没有的全新文件
+                    if name in self._tree:
+                        xml_bytes = self._serialize_preserving_header(name)
+                        zf.writestr(name, xml_bytes)
 
         return str(target)
 
@@ -355,6 +372,26 @@ class DocxOperator:
                 # 修复自闭合根元素：将 /> 转为 >，否则追加子元素后 XML 非法
                 if orig_header.rstrip().endswith('/>'):
                     orig_header = orig_header.rstrip()[:-2].rstrip() + '>'
+
+                # 关键修复：原始文件可能在子元素上声明了命名空间，
+                # 导致根元素 header 中缺少这些声明。
+                # ElementTree 序列化时会将其提升到根元素上，
+                # 因此从 ET 生成的 header 中提取原始 header 缺失的命名空间声明并补充。
+                new_header = new_match.group(1)
+                orig_ns_set = set(re.findall(r'xmlns:[a-zA-Z0-9_]+="[^"]*"', orig_header))
+                new_ns_list = re.findall(r'xmlns:[a-zA-Z0-9_]+="[^"]*"', new_header)
+                additions = [ns for ns in new_ns_list if ns not in orig_ns_set]
+                if additions:
+                    # 在 orig_header 最后一个引号后插入缺失的命名空间声明
+                    insert_pos = orig_header.rfind('"')
+                    if insert_pos > 0:
+                        orig_header = (
+                            orig_header[:insert_pos + 1]
+                            + " "
+                            + " ".join(additions)
+                            + orig_header[insert_pos + 1:]
+                        )
+
                 return (orig_header + new_xml[new_match.end():]).encode("utf-8")
 
         # 回退：直接返回 ET 输出

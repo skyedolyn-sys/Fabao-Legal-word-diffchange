@@ -1027,6 +1027,9 @@ def extract_revisions(docx_path: str) -> dict:
             if cid in comments:
                 para_comments[para_idx_str].append(comments[cid])
 
+    # Extract vendor (Party B) country from contract text
+    party_metadata = _extract_party_metadata(paragraphs)
+
     # Build summary
     summary = {
         "total_paragraphs": len(paragraphs),
@@ -1056,9 +1059,91 @@ def extract_revisions(docx_path: str) -> dict:
         "ordered_revisions": ordered_revisions,
         "comments": comments,
         "paragraph_comments": para_comments,
+        "party_metadata": party_metadata,
     }
 
     return result
+
+
+def _extract_party_metadata(paragraphs: list[dict]) -> dict:
+    """Extract party metadata (vendor country, names) from contract text.
+
+    Scans the first portion of the document for party identification
+    paragraphs and attempts to detect the vendor's (Party B) country.
+    """
+    country_map = {
+        "SG": ["singapore", "新加坡", "pte. ltd.", "pte ltd", "private limited", "pte limited"],
+        "HK": ["hong kong", "香港", "hk limited", "hong kong limited"],
+        "US": ["united states", "usa", "u.s.", "u.s.a.", "美国", "delaware", "california", "new york", "inc.", "llc", "corporation"],
+        "CN": ["china", "中国", "北京", "上海", "广州", "深圳", "广东", "浙江", "江苏", "co., ltd.", "co.,ltd.", "有限责任公司"],
+        "UK": ["united kingdom", "uk", "england", "london"],
+    }
+
+    # Collect text from first 150 paragraphs (usually covers parties section)
+    combined_text = ""
+    for para in paragraphs[:150]:
+        combined_text += " " + para.get("text", "")
+    combined_lower = combined_text.lower()
+
+    # Find Party A marker to help exclude Party A's country from vendor detection
+    party_a_markers = ["甲方", "party a", "甲方（", "party a ("]
+    party_a_pos = -1
+    for marker in party_a_markers:
+        pos = combined_lower.find(marker)
+        if pos != -1:
+            party_a_pos = pos
+            break
+
+    # Find Party B marker
+    party_b_markers = ["乙方", "party b", "乙方（", "party b ("]
+    party_b_pos = -1
+    for marker in party_b_markers:
+        pos = combined_lower.find(marker)
+        if pos != -1:
+            party_b_pos = pos
+            break
+
+    vendor_country = None
+
+    # Strategy 1: Search in Party B window (up to 600 chars after Party B marker)
+    if party_b_pos != -1:
+        party_b_window = combined_lower[party_b_pos:party_b_pos + 600]
+        for country, keywords in country_map.items():
+            for kw in keywords:
+                if kw in party_b_window:
+                    vendor_country = country
+                    break
+            if vendor_country:
+                break
+
+    # Strategy 2: Fallback — search text after Party A section (exclude Party A's own country)
+    if not vendor_country and party_a_pos != -1:
+        # Skip Party A's section (approx 600 chars) to reduce false positives
+        search_start = party_a_pos + 600
+        if search_start < len(combined_lower):
+            search_text = combined_lower[search_start:]
+            for country, keywords in country_map.items():
+                for kw in keywords:
+                    if kw in search_text:
+                        vendor_country = country
+                        break
+                if vendor_country:
+                    break
+
+    # Strategy 3: Last resort — scan entire text
+    if not vendor_country:
+        for country, keywords in country_map.items():
+            for kw in keywords:
+                if kw in combined_lower:
+                    vendor_country = country
+                    break
+            if vendor_country:
+                break
+
+    return {
+        "vendor_country": vendor_country,
+        "vendor_country_detected": vendor_country is not None,
+    }
 
 
 def main():

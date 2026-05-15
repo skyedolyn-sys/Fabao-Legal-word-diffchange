@@ -1,8 +1,318 @@
 {
-  "version": "1.0.0",
-  "description": "Moonshot Legal standard clause library for NDA negotiation. These are our preferred positions — use as replacement text when the counterparty's clause triggers a risk rule.",
+  "version": "2.0.0",
+  "description": "Moonshot Legal standard clause library for NDA negotiation. Derived from Moonshot's standard MNDA template (/Users/moonshot/Documents/合同审核类/我方模版/NDA/Moonshot - MNDA.docx). These are Moonshot's preferred positions — use as replacement text when the counterparty's clause deviates from our standard.",
   "playbook_id": "nda",
+  "template_source": "Moonshot - MNDA.docx (Moonshot standard mutual NDA template)",
   "clauses": [
+    {
+      "id": "std_def_001",
+      "name": "协议主体与定义（MNDA）",
+      "name_en": "Party Definitions (MNDA)",
+      "clause_type": "协议结构",
+      "priority": "P0",
+      "triggers": [
+        "对方将Moonshot定义为单方披露方或单方接收方",
+        "缺少Discloser/Recipient的互斥定义",
+        "Mutual NDA被改为单向NDA"
+      ],
+      "text_en": "This Mutual Non-Disclosure Agreement (this \"Agreement\") is entered into between Moonshot AI PTE. LTD, an exempted company established under the laws of Singapore (\"Party A\"), and the recipient identified on the signature page hereto (\"Party B\", and together with Party A, the \"Parties\", and each, a \"Party\") as of [*], 2026 (the \"Effective Date\" ). \"Discloser\" means the Party disclosing Confidential Information under this Agreement. \"Recipient\" or \"Receiving Party\" means the Party receiving Confidential Information from the Discloser under this Agreement. Each Party may be a Discloser or a Recipient, depending on the circumstances of the disclosure.",
+      "text_cn": "本相互保密协议（以下简称\"本协议\"）由依据新加坡法律注册的豁免公司 Moonshot AI PTE. LTD（\"甲方\"）与签署页上载明的接收方（\"乙方\"，与甲方合称\"双方\"，单独称为\"一方\"）于2026年[*]日（\"生效日\"）订立。\"披露方\"指根据本协议向接收方披露保密信息的一方。\"接收方\"指根据本协议从披露方接收保密信息的一方。任一方均可根据披露的具体情况成为披露方或接收方。",
+      "covers": ["party_definitions", "mutual_nda", "effective_date", "discloser_definition", "recipient_definition"],
+      "key_terms": {
+        "party_a": "Moonshot AI PTE. LTD",
+        "party_b": "Counterparty (identified on signature page)",
+        "effective_date": "As of signature date",
+        "discloser": "The Party disclosing Confidential Information",
+        "recipient": "The Party receiving Confidential Information",
+        "mutual": true
+      },
+      "usage_notes": "Moonshot 标准模版为 Mutual NDA（双方互为披露方/接收方）。如对方将协议改为单向 NDA（仅 Moonshot 为披露方），需坚持改为 Mutual NDA。理由：(1) 双方在实际商务交流中均可能披露保密信息；(2) 单向 NDA 对 Moonshot 不公平；(3) 行业标准做法是 Mutual NDA。",
+      "adaptation_guide": {
+        "if_unilateral_nda_requested": "如对方坚持单向 NDA，需评估其合理性（如仅为对方提供技术资料而 Moonshot 不披露任何信息）。如确有单向必要，需确保 Moonshot 是 Discloser 而非 Recipient。",
+        "if_party_names_change": "将 Party A/B 替换为具体公司名称，保持 Discloser/Recipient 的定义不变。",
+        "if_effective_date_specific": "将 [*] 替换为实际签署日期。"
+      }
+    },
+    {
+      "id": "std_pu_001",
+      "name": "许可用途/披露目的",
+      "name_en": "Permitted Use / Purpose of Disclosure",
+      "clause_type": "协议结构",
+      "priority": "P1",
+      "triggers": [
+        "对方删除或缩窄Permitted Use范围",
+        "对方增加超出商务评估目的的用途限制",
+        "目的条款过于宽泛（如'任何目的'）"
+      ],
+      "text_en": "The Parties desire to protect the confidentiality of certain confidential and proprietary information of either Party, disclosed or to be disclosed to the other Party, for use in any actual or potential discussions, evaluations, negotiations, or collaborations between the Parties, including without limitation matters relating to either Party's models, products, or services (the \"Permitted Use\").",
+      "text_cn": "双方希望保护任一方已向或拟向另一方披露的某些保密及专有信息的机密性，该等信息用于双方之间任何实际或潜在的讨论、评估、谈判或合作，包括但不限于与任一方的模型、产品或服务相关的事项（\"许可用途\"）。",
+      "covers": ["purpose", "permitted_use", "scope_of_discussion"],
+      "key_terms": {
+        "scope": "discussions, evaluations, negotiations, or collaborations",
+        "includes": "models, products, or services"
+      },
+      "usage_notes": "Permitted Use 定义了保密信息的使用范围，过宽会增加 Recipient 的潜在违约风险，过窄会限制正常的商务评估。Moonshot 标准范围为'讨论、评估、谈判或合作'，涵盖商务全流程。如对方将范围缩窄为仅'评估'或删除'谈判'，建议争取恢复。",
+      "adaptation_guide": {
+        "if_specific_project": "可在括号中增加具体项目名称，如 'including Project X'。",
+        "if_counterparty_expands": "如对方将范围扩大到'任何商业目的'或'与第三方共享'，必须拒绝。"
+      }
+    },
+    {
+      "id": "std_ci_001",
+      "name": "保密信息定义",
+      "name_en": "Confidential Information Definition",
+      "clause_type": "保密信息定义",
+      "priority": "P0",
+      "triggers": [
+        "对方缩窄保密信息范围（如要求必须书面标记）",
+        "对方删除'口头信息'或'应该知道'条款",
+        "对方增加'必须书面确认口头披露'等额外条件"
+      ],
+      "text_en": "As used herein, \"Confidential Information\" will mean any and all technical and non-technical information provided by the Discloser to the Recipient, which may include without limitation information regarding: (a) patent and patent applications; (b) trade secrets; (c) proprietary and confidential information, ideas, techniques, sketches, drawings, works of authorship, models, inventions, know-how, processes, apparatuses, equipment, algorithms, software programs, software source documents, and formulae related to the current, future, and proposed products and services of the Discloser, including without limitation the Discloser's information concerning research, experimental work, development, design details and specifications, engineering, financial information, procurement requirements, purchasing, manufacturing, customer lists, investors, employees, business and contractual relationships, business forecasts, sales and merchandising, marketing plans and information the Discloser provides regarding third parties; (d) test data, analyses, studies, and results of trials or experiments conducted by or on behalf of the Discloser; and (e) all other information that the Recipient knew, or reasonably should have known, was the Confidential Information of the Discloser.",
+      "text_cn": "本协议中所称\"保密信息\"，指披露方向接收方提供的所有技术及非技术信息，包括但不限于以下信息：(a) 专利及专利申请；(b) 商业秘密；(c) 与披露方现有、未来及拟议产品及服务相关的专有及保密信息、创意、技术、草图、图纸、著作权作品、模型、发明、专有技术、工艺、设备、算法、软件程序、软件源文件及配方，包括但不限于披露方有关研究、实验工作、开发、设计细节及规格、工程、财务信息、采购需求、采购、制造、客户名单、投资者、员工、业务及合同关系、业务预测、销售及营销、营销计划以及披露方提供的关于第三方的信息；(d) 披露方或代表披露方进行的试验或实验的测试数据、分析、研究及结果；以及 (e) 接收方已知或理应知道属于披露方保密信息的其他所有信息。",
+      "covers": ["confidential_information_definition", "technical_information", "non_technical_information", "oral_information", "know_or_should_have_known"],
+      "key_terms": {
+        "scope": "any and all technical and non-technical information",
+        "marking_requirement": "None — no marking required",
+        "oral_coverage": "Covered (implicit in 'any and all information')",
+        "know_or_should_have_known": "Recipient knew or reasonably should have known"
+      },
+      "usage_notes": "Moonshot 标准定义极为宽泛，不依赖书面标记，涵盖口头信息，且包含'知道或理应知道'的兜底条款。谈判中常见的对方修改包括：(1) 要求所有保密信息必须书面标记 — 必须拒绝，因为口头交流是商务常态；(2) 删除'应该知道'条款 — 必须拒绝，这是防止 Recipient 以'不知道'为由抗辩的关键条款。",
+      "adaptation_guide": {
+        "if_counterparty_insists_on_marking": "可退让至'口头披露须在合理时间内书面确认'，但不接受'未标记即不构成保密信息'。",
+        "if_industry_specific_info": "可在 (c) 项中增加行业特定信息类型。"
+      }
+    },
+    {
+      "id": "std_ob_001",
+      "name": "接收方保密义务",
+      "name_en": "Recipient's Confidentiality Obligations",
+      "clause_type": "保密义务",
+      "priority": "P0",
+      "triggers": [
+        "对方降低保护标准（如删除'至少同等保护'）",
+        "对方扩大'need to know'范围至非雇员/非授权代表",
+        "对方删除'至少同等限制性'的保密协议要求",
+        "对方增加允许披露给关联公司的无条件条款"
+      ],
+      "text_en": "Subject to Section 3, the Recipient agrees that at all times and notwithstanding any termination or expiration of this Agreement it will hold in strict confidence and not disclose to any third party any Confidential Information, except as approved in writing by the Discloser, and will use the Confidential Information for no purpose other than the Permitted Use. The Recipient will also protect such Confidential Information with at least the same degree of care that the Recipient uses to protect its own Confidential Information, but in no case, less than reasonable care. The Recipient will limit access to the Confidential Information to only those of its employees or authorized representatives having a need to know and who have signed confidentiality agreements containing, or are otherwise bound by, confidentiality obligations at least as restrictive as those contained herein.",
+      "text_cn": "在遵守第3条的前提下，接收方同意，在本协议有效期内及终止或届满后，始终对保密信息严格保密，未经披露方书面批准不得向任何第三方披露，且仅将保密信息用于许可用途。接收方还应以至少与其保护自身保密信息同等的审慎程度保护该等保密信息，但在任何情况下不得低于合理审慎程度。接收方应将对保密信息的访问权限仅限于确有必要知悉且已签署包含至少同等限制性保密义务的保密协议，或以其他方式受至少同等限制性保密义务约束的其雇员或授权代表。",
+      "covers": ["confidentiality_obligation", "non_disclosure", "use_restriction", "care_standard", "need_to_know", "employee_nda", "authorized_representatives"],
+      "key_terms": {
+        "care_standard": "At least same degree as own CI, no less than reasonable care",
+        "access_limitation": "Employees or authorized representatives with need to know",
+        "sub_nda_requirement": "Confidentiality agreements at least as restrictive",
+        "survival": "Survives termination/expiration"
+      },
+      "usage_notes": "这是 NDA 的核心义务条款。Moonshot 标准要求：(1) '至少同等保护'标准 — 如对方改为'合理审慎'而不提及自身标准，可能降低保护力度；(2) 访问人员限制为'雇员或授权代表'且需'确有必要知悉' — 如对方增加'关联公司'、'分包商'而无条件访问，必须限制或要求同等级别保密义务；(3) 下属保密协议'至少同等限制性' — 不得低于本协议标准。",
+      "adaptation_guide": {
+        "if_affiliate_access_needed": "如确需关联公司访问，可增加'关联公司（Affiliates）'但要求同样签署至少同等限制性保密协议。",
+        "if_counterparty_lowers_standard": "坚持'至少同等保护'和'合理审慎'的双重标准，不可接受仅保留其一。"
+      }
+    },
+    {
+      "id": "std_ex_001",
+      "name": "保密信息除外情形",
+      "name_en": "Exceptions to Confidential Information",
+      "clause_type": "除外情形",
+      "priority": "P1",
+      "triggers": [
+        "对方删除'独立开发'例外",
+        "对方增加'反向工程'构成例外的条件",
+        "对方删除'从第三方合法获得'例外",
+        "对方缩窄'公知'例外的范围"
+      ],
+      "text_en": "The Recipient will not have any obligations under this Agreement with respect to a specific portion of the Confidential Information if the Recipient can demonstrate with competent evidence that such Confidential Information: (a) was in the public domain at the time it was disclosed to the Recipient; (b) was in the Recipient's lawful possession free of any obligation of confidence at the time it was disclosed to the Recipient; (c) is furnished to a third party by the Discloser without an obligation of confidentiality; (d) becomes known to Recipient from a source other than the Discloser without breach of this Agreement by the Recipient; or (e) was developed by the Recipient independently without breach of this Agreement by the Recipient.",
+      "text_cn": "如接收方能以充分证据证明以下情形，则接收方对该等特定部分的保密信息不承担本协议项下的任何义务：(a) 该等信息在披露给接收方时已处于公共领域；(b) 该等信息在披露给接收方时已由接收方合法持有且不受任何保密义务约束；(c) 披露方在向第三方提供该等信息时未附加保密义务；(d) 接收方从披露方以外的来源获知该等信息，且接收方未违反本协议；或 (e) 该等信息由接收方独立开发，且接收方未违反本协议。",
+      "covers": ["public_domain", "prior_possession", "third_party_disclosure", "independent_development", "independent_knowledge"],
+      "key_terms": {
+        "burden_of_proof": "Recipient must demonstrate with competent evidence",
+        "public_domain_timing": "At the time of disclosure",
+        "prior_possession": "Lawful possession free of confidence obligation at time of disclosure",
+        "independent_development": "Developed independently without breach"
+      },
+      "usage_notes": "除外情形是 Recipient 的核心保护条款。Moonshot 标准包含5项经典例外：(a) 公知信息（披露时已在公共领域）；(b) 事先已合法持有；(c) 披露方已向第三方无保密义务披露；(d) 从第三方合法获得；(e) 独立开发。谈判中对方常见的有害修改包括：(1) 删除'独立开发' — 必须拒绝，这是 Recipient 证明信息来源合法的关键途径；(2) 将'公知'要求扩大到'通过 reverse engineering 进入公共领域' — 可能不当扩大保密义务；(3) 增加举证责任（如要求'书面记录'独立开发过程）— 可协商但不应过度加重。",
+      "adaptation_guide": {
+        "if_counterparty_adds_reverse_engineering_condition": "可接受'通过独立开发的 reverse engineering 获得的信息不构成违约'作为补充说明，但不可接受'任何 reverse engineering 均构成违约'。",
+        "if_independent_development_proof_required": "如对方要求保留独立开发的书面记录，可接受合理范围内的记录义务，但不应要求过于繁琐的文档。"
+      }
+    },
+    {
+      "id": "std_pd_001",
+      "name": "法律强制披露程序",
+      "name_en": "Compelled Disclosure Procedure",
+      "clause_type": "允许披露",
+      "priority": "P1",
+      "triggers": [
+        "对方删除'事先书面通知'要求",
+        "对方删除'合理努力获取保护令'的义务",
+        "对方将'法院命令'扩大至'任何政府要求'而不加限制",
+        "对方缩短通知期限"
+      ],
+      "text_en": "Notwithstanding the above, the Recipient may disclose certain Confidential Information, without violating the obligations of this Agreement, to the extent such disclosure is required by a valid order of a court or other governmental body having jurisdiction, provided that the Recipient provides the Discloser with reasonable prior written notice of such disclosure and makes a reasonable effort to obtain, or to assist the Discloser in obtaining, a protective order preventing or limiting the disclosure and/or requiring that the Confidential Information so disclosed be used only for the purposes for which the law or regulation required, or for which the order was issued.",
+      "text_cn": "尽管有上述规定，如具有管辖权的法院或其他政府机构下达有效命令要求披露，接收方可在不违反本协议义务的前提下披露某些保密信息，但前提是接收方应在该等披露前向披露方发出合理的书面通知，并尽合理努力获取或协助披露方获取保护令，以防止或限制该等披露，和/或要求被披露的保密信息仅用于法律或法规要求或命令所规定的目的。",
+      "covers": ["compelled_disclosure", "court_order", "governmental_body", "prior_notice", "protective_order"],
+      "key_terms": {
+        "trigger": "Valid order of court or governmental body having jurisdiction",
+        "notice": "Reasonable prior written notice",
+        "protective_order_effort": "Reasonable effort to obtain or assist in obtaining protective order",
+        "limitation": "Disclosed information used only for purposes required by law/order"
+      },
+      "usage_notes": "强制披露程序平衡了法律合规与保密保护。Moonshot 标准包含三个关键要素：(1) 有效法院/政府命令（非任意要求）；(2) 合理事先书面通知 — 使披露方有机会提出异议或自行申请保护令；(3) 合理努力获取保护令。如对方删除'事先通知'或'保护令努力'，必须拒绝，因为这两项是 Recipient 履行保密义务的最后防线。",
+      "adaptation_guide": {
+        "if_counterparty_adds_broad_government_request": "如对方将触发条件扩大到'任何政府询问'（非法院命令），应坚持限定为'valid order'，但可接受'监管机构依法发出的传票（subpoena）'。",
+        "if_notice_timing_disputed": "'合理事先通知'通常理解为3-5个工作日，如对方要求更短，可协商但不宜少于48小时。"
+      }
+    },
+    {
+      "id": "std_no_001",
+      "name": "数据泄露通知义务",
+      "name_en": "Data Breach Notification Obligation",
+      "clause_type": "保密义务",
+      "priority": "P1",
+      "triggers": [
+        "对方删除或延迟通知义务",
+        "对方将'立即'改为'在合理时间内'",
+        "对方增加通知的例外条件"
+      ],
+      "text_en": "The Recipient will immediately notify the Discloser in the event of any loss or unauthorized disclosure of any Confidential Information.",
+      "text_cn": "如发生任何保密信息的遗失或未经授权披露，接收方应立即通知披露方。",
+      "covers": ["breach_notification", "loss_notification", "unauthorized_disclosure", "immediate_notice"],
+      "key_terms": {
+        "trigger": "Loss or unauthorized disclosure of any Confidential Information",
+        "timing": "Immediately",
+        "form": "Notification (not necessarily written, but written is best practice)"
+      },
+      "usage_notes": "数据泄露通知是 Recipient 在发生安全事件时的关键义务。'立即'（immediately）是标准表述，如对方改为'在合理时间内'（within a reasonable time）或'在知悉后X天内'，会给予 Recipient 不必要的延迟空间。如对方增加'如法律禁止通知'等例外，需确保例外范围不宽泛（如仅限于法院明确禁止）。",
+      "adaptation_guide": {
+        "if_counterparty_requests_written_notice_only": "可接受'立即以书面形式通知'，增加形式要求。",
+        "if_counterparty_adds_law_prohibition_exception": "可接受'如法律明确禁止通知则除外，但应在禁止解除后立即通知'。"
+      }
+    },
+    {
+      "id": "std_re_001",
+      "name": "信息返还与销毁",
+      "name_en": "Return or Destruction of Confidential Information",
+      "clause_type": "信息返还",
+      "priority": "P1",
+      "triggers": [
+        "对方增加'销毁'选项而无须'返还'",
+        "对方删除'应披露方书面请求'的触发条件",
+        "对方增加'保留备份'的例外而未限制用途",
+        "对方将'及时'改为'在合理时间内'"
+      ],
+      "text_en": "Upon termination or expiration of this Agreement, or upon written request of the Discloser, the Recipient will promptly return to the Discloser all documents and other tangible materials representing any Confidential Information and all copies thereof.",
+      "text_cn": "在本协议终止或届满后，或应披露方书面要求，接收方应及时向披露方返还所有载有保密信息的文件及其他有形材料及其所有副本。",
+      "covers": ["return", "destruction", "termination", "written_request", "tangible_materials"],
+      "key_terms": {
+        "trigger": "Termination/expiration OR written request of Discloser",
+        "action": "Return (primary)",
+        "scope": "All documents and tangible materials and all copies",
+        "timing": "Promptly"
+      },
+      "usage_notes": "Moonshot 标准条款仅要求'返还'（return），不默认允许'销毁'（destruction）。这是因为：(1) 返还使披露方完全控制信息；(2) 销毁无法验证，存在信息残留风险；(3) 如对方坚持增加销毁选项，可接受'返还或销毁（由披露方选择）'或'返还为主，如无法返还则销毁并出具证明'。如对方将触发条件改为仅'终止时'而删除'应披露方书面请求'，会削弱披露方的控制权，建议争取恢复。",
+      "adaptation_guide": {
+        "if_counterparty_insists_on_destruction": "可退让至：'返还或销毁，由披露方选择'，或'如无法物理返还，则销毁并出具经授权人员签署的书面证明'。",
+        "if_digital_copies_issue": "电子文件应明确包含'所有电子副本、备份及衍生文件'。"
+      }
+    },
+    {
+      "id": "std_ip_001",
+      "name": "知识产权归属与不授予许可",
+      "name_en": "IP Ownership and No License Grant",
+      "clause_type": "知识产权",
+      "priority": "P0",
+      "triggers": [
+        "对方删除'不授予任何权利'条款",
+        "对方将'不授予'改为'授予有限许可'",
+        "对方删除'保密信息归披露方独有'",
+        "对方增加'改进归接收方'或'共同所有'"
+      ],
+      "text_en": "Confidential Information is and shall remain the sole property of the Discloser. The Recipient recognizes and agrees that nothing contained in this Agreement will be construed as granting any property rights, by license or otherwise, to any Confidential Information disclosed under this Agreement, or to any invention or any patent, copyright, trademark, or other intellectual property right that has issued or that may issue, based on such Confidential Information. The Recipient will not make, have made, use or sell for any purpose any product or other item using, incorporating or derived from any Confidential Information. Neither this Agreement nor the disclosure of any Confidential Information hereunder shall result in any obligation on the part of either party to enter into any further agreement with the other, license any products or services to the other, or to require the Discloser to disclose any particular Confidential Information. Nothing in this Agreement creates or shall be deemed to create any employment, joint venture, or agency between the parties.",
+      "text_cn": "保密信息是且应始终是披露方的独有财产。接收方确认并同意，本协议中的任何内容均不得被解释为通过许可或其他方式授予接收方对本协议项下披露的任何保密信息，或基于该等保密信息的任何发明、任何已颁发或可能颁发的专利、版权、商标或其他知识产权的任何财产权利。接收方不得为任何目的制造、委托制造、使用或销售使用、包含或衍生于任何保密信息的任何产品或其他物品。本协议或本协议项下任何保密信息的披露均不得导致任何一方负有与另一方签订任何进一步协议、向另一方许可任何产品或服务的义务，也不得要求披露方披露任何特定保密信息。本协议中的任何内容均不得创设或被视为在双方之间创设任何雇佣、合资或代理关系。",
+      "covers": ["ip_ownership", "no_license", "no_implied_license", "no_employment", "no_joint_venture", "no_agency", "no_obligation_to_disclose"],
+      "key_terms": {
+        "ownership": "Sole property of the Discloser",
+        "license": "No license granted, express or implied",
+        "use_restriction": "No make/have made/use/sell of products derived from CI",
+        "relationship": "No employment, joint venture, or agency"
+      },
+      "usage_notes": "这是 NDA 中最重要的 IP 条款之一。Moonshot 标准明确：(1) 保密信息归属披露方；(2) 不授予任何许可（明示或默示）；(3) 禁止基于保密信息开发产品；(4) 不产生任何进一步义务或特殊法律关系。如对方删除'不授予许可'或增加'改进归接收方'，必须强烈反对。Mutual NDA 中此条款对双方均适用。",
+      "adaptation_guide": {
+        "if_counterparty_adds_improvement_clause": "如对方增加'基于保密信息的改进归接收方所有'，必须拒绝。这是将 NDA 变相转为技术转让协议。",
+        "if_mutual_nda": "条款文本不变，因双方互为 Discloser，各自的保密信息归各自所有，天然对等。"
+      }
+    },
+    {
+      "id": "std_ip_002",
+      "name": "保密信息复制限制",
+      "name_en": "Reproduction Restrictions",
+      "clause_type": "知识产权",
+      "priority": "P2",
+      "triggers": [
+        "对方删除'复制需保留原保密标识'要求",
+        "对方允许无条件复制"
+      ],
+      "text_en": "Confidential Information will not be reproduced in any form except as required to accomplish the intent of this Agreement. Any reproduction of any Confidential Information will remain the property of the Discloser and will contain any and all confidential or proprietary notices or legends that appear on the original, unless otherwise authorized in writing by the Discloser.",
+      "text_cn": "除为实现本协议目的所必需外，不得以任何形式复制保密信息。任何保密信息的复制件仍应为披露方的财产，且应包含原件上出现的所有保密或专有标识或图例，除非经披露方另行书面授权。",
+      "covers": ["reproduction", "copies", "proprietary_notices", "legends"],
+      "key_terms": {
+        "scope": "Only as required to accomplish the intent of the Agreement",
+        "ownership_of_copies": "Remains property of the Discloser",
+        "notice_requirement": "Must contain all confidential/proprietary notices from original"
+      },
+      "usage_notes": "限制不必要的复制有助于控制保密信息的扩散。Moonshot 标准仅允许'为实现本协议目的所必需'的复制，且复制件须保留原标识。这是标准行业条款，通常争议不大。"
+    },
+    {
+      "id": "std_te_001",
+      "name": "协议期限与保密义务存续",
+      "name_en": "Term and Survival of Confidentiality Obligations",
+      "clause_type": "期限",
+      "priority": "P0",
+      "triggers": [
+        "对方设定固定保密期限（如2年、3年）",
+        "对方将'只要保密信息仍具机密性'改为固定年限",
+        "对方删除'继承人、继任者、受让人'的约束",
+        "对方增加自动续约条款"
+      ],
+      "text_en": "This Agreement will remain in effect until terminated by either party upon written notice. Notwithstanding any termination of this Agreement, the Recipient's confidentiality obligations hereunder shall survive and continue with respect to all Confidential Information for so long as such Confidential Information remains confidential, and shall be binding upon the Recipient's heirs, successors, and assigns.",
+      "text_cn": "本协议将持续有效，直至任一方发出书面通知终止。尽管本协议终止，接收方在本协议项下的保密义务应继续存续，并适用于所有保密信息，只要该等信息仍具有保密性，且该等义务对接收方的继承人、继任者和受让人具有约束力。",
+      "covers": ["term", "termination", "survival", "perpetual_confidentiality", "heirs_successors_assigns"],
+      "key_terms": {
+        "term": "Until terminated by either party upon written notice",
+        "survival": "As long as Confidential Information remains confidential",
+        "binding": "Heirs, successors, and assigns"
+      },
+      "usage_notes": "Moonshot 标准采用'保密义务永久存续'（perpetual confidentiality）机制：协议本身可随时终止，但保密义务持续至信息不再保密为止。这是保护商业秘密的黄金标准。谈判中对方最常见的有害修改是将保密期限固定为2-5年，必须强烈反对，因为：(1) 商业秘密的价值可能持续数十年；(2) 固定期限届满后 Recipient 可自由使用或披露，对 Discloser 极不利；(3) 行业标准（尤其是技术公司）普遍接受永久保密义务。",
+      "adaptation_guide": {
+        "if_counterparty_insists_on_fixed_term": "坚决拒绝固定期限。可提供的让步：(1) 区分一般保密信息（如可设3-5年）和商业秘密/技术信息（永久保密）；(2) 如对方为大型跨国公司且内部合规要求固定期限，可设5年为上限，但须明确'商业秘密除外'。",
+        "if_counterparty_adds_auto_renewal": "自动续约通常对双方无实质影响，因协议本身无固定期限，但需留意自动续约是否附带其他义务。"
+      }
+    },
+    {
+      "id": "std_di_001",
+      "name": "免责声明",
+      "name_en": "Disclaimer",
+      "clause_type": "其他",
+      "priority": "P2",
+      "triggers": [
+        "对方删除或弱化免责声明",
+        "对方将'AS IS'改为质量保证条款",
+        "对方增加'披露方保证信息准确'"
+      ],
+      "text_en": "The Discloser is providing Confidential Information on an \"AS IS\" basis for use by the recipient at its own risk. The Discloser disclaims all WARRANTIES, WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING WITHOUT LIMITATION ANY IMPLIED WARRANTIES OF TITLE, NON-INFRINGEMENT OF THIRD PARTY RIGHTS, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.",
+      "text_cn": "披露方按\"现状\"（AS IS）提供保密信息，由接收方自行承担使用风险。披露方否认所有保证，无论是明示、默示或法定的，包括但不限于任何关于所有权、不侵犯第三方权利、适销性或特定用途适用性的默示保证。",
+      "covers": ["as_is", "disclaimer", "no_warranty", "use_at_own_risk"],
+      "key_terms": {
+        "basis": "AS IS",
+        "risk_allocation": "Recipient at its own risk",
+        "warranty_disclaimer": "All warranties express, implied, statutory"
+      },
+      "usage_notes": "免责声明保护披露方不因保密信息的准确性或完整性承担责任。这是 NDA 的标准条款，通常争议不大。如对方要求披露方保证信息准确，必须拒绝，因为 NDA 的目的是保护信息而非出售产品。Mutual NDA 中此条款对双方均适用。",
+      "adaptation_guide": {
+        "if_mutual_nda": "条款文本不变，因双方互为 Discloser，各自按 AS IS 提供信息，天然对等。"
+      }
+    },
     {
       "id": "std_dr_001",
       "name": "SIAC标准仲裁条款（含准据法与修改限制）",
@@ -16,11 +326,7 @@
       ],
       "text_en": "This Agreement and any action related thereto shall be governed by and construed in accordance with the laws of Singapore, without regard to its conflict of laws principles. Any disputes arising out of or in connection with this Agreement shall be finally resolved by arbitration administered by the Singapore International Arbitration Centre (\"SIAC\") in accordance with the SIAC Rules then in effect, which rules are deemed to be incorporated by reference into this clause. The seat of arbitration shall be Singapore, and the language of arbitration shall be English. This Agreement may not be amended except by a writing signed by both parties.",
       "text_cn": "本协议及与之相关的任何行为应受新加坡法律管辖并依据新加坡法律解释，不考虑其法律冲突原则。因本协议产生的或与本协议有关的任何争议应最终通过由新加坡国际仲裁中心（'SIAC'）管理的仲裁解决，仲裁应按照提交仲裁时有效的SIAC仲裁规则进行，该规则被视为通过引用纳入本条款。仲裁地为新加坡，仲裁语言为英语。未经双方书面签署，本协议不得修改。",
-      "covers": [
-        "governing_law",
-        "arbitration",
-        "amendment_restriction"
-      ],
+      "covers": ["governing_law", "arbitration", "amendment_restriction"],
       "key_terms": {
         "governing_law": "Laws of Singapore",
         "arbitration_institution": "SIAC",
@@ -29,12 +335,147 @@
         "language": "English",
         "amendment": "writing signed by both parties"
       },
-      "usage_notes": "Moonshot 注册地为新加坡，新加坡法 + SIAC 仲裁是我方首选争议解决方案：(1) 与公司注册地一致，法律适用最自然；(2) 新加坡仲裁裁决在《纽约公约》下全球可执行；(3) SIAC 仲裁效率高、程序可预期；(4) 新加坡法律体系稳定、商事判例丰富。谈判时可直接以“我方为新加坡公司，适用新加坡法律为常规做法”为由提出。",
+      "usage_notes": "Moonshot 注册地为新加坡，新加坡法 + SIAC 仲裁是我方首选争议解决方案：(1) 与公司注册地一致，法律适用最自然；(2) 新加坡仲裁裁决在《纽约公约》下全球可执行；(3) SIAC 仲裁效率高、程序可预期；(4) 新加坡法律体系稳定、商事判例丰富。谈判时可直接以'我方为新加坡公司，适用新加坡法律为常规做法'为由提出。",
       "adaptation_guide": {
         "if_bilateral_nda": "本条款同时覆盖准据法和争议解决，可替换对方模板中分列的 Governing Law + Dispute Resolution 两个条款。如对方模板将二者分列，可合并至 Dispute Resolution 条款并在 Governing Law 条款处加批注交叉引用。",
         "if_cn_domestic": "如双方均为中国大陆实体，建议改用中国仲裁机构（如 CIETAC/BAC），准据法改为中国法律。",
         "if_counterparty_resists_singapore": "可退让至香港（HKIAC）+ 香港法，但不接受对方所在地法律体系。注意：新加坡法仍为我方第一优先级，因为 Moonshot 本身是新加坡注册实体。"
       }
+    },
+    {
+      "id": "std_re_002",
+      "name": "禁令救济权（须双向对等）",
+      "name_en": "Injunctive Relief (Must Be Bilateral)",
+      "clause_type": "救济与违约",
+      "priority": "P0",
+      "triggers": [
+        "对方仅赋予单方（Discloser）禁令救济权",
+        "对方删除禁令救济条款",
+        "对方增加'无需提供担保'（without bond）条款"
+      ],
+      "text_en": "Each Party hereby agrees that its breach of this Agreement will cause irreparable damage to the other Party for which recovery of damages would be inadequate, and that each Party will be entitled to obtain timely injunctive relief under this Agreement, as well as such further relief as may be granted by a court of competent jurisdiction.",
+      "text_cn": "各方特此同意，其违反本协议将对另一方造成不可弥补的损害，金钱赔偿不足以弥补，因此各方均有权根据本协议及时获得禁令救济，以及有管辖权的法院可能授予的进一步救济。",
+      "covers": ["injunction", "irreparable_harm", "equitable_relief", "bilateral"],
+      "key_terms": {
+        "standard_text_bilateral": "Each Party... its breach... to the other Party... each Party will be entitled",
+        "mutual": true,
+        "bond": "No mention of 'without bond' — standard practice may still require bond"
+      },
+      "usage_notes": "⚠️ 重要：Moonshot 标准 MNDA 模板原文（§10 / 第20段）为单向条款：'The Recipient hereby agrees... the Discloser will be entitled to obtain timely injunctive relief' — 仅 Discloser 有禁令救济权。作为标准 MNDA，此条款在 Mutual NDA 场景下应修改为双向对等（如上方 text_en 所示）。审阅对方模板时：(1) 如对方保留单向条款（仅赋予其自身禁令救济权），必须要求改为双向；(2) 如对方删除禁令救济条款，应争取恢复，因为保密信息泄露后金钱赔偿往往不足以弥补损失；(3) 警惕'无需提供担保（without bond）'条款，这会增加申请禁令的便利性和风险。",
+      "adaptation_guide": {
+        "if_counterparty_insists_on_unilateral": "坚决要求双向对等。理由是 Mutual NDA 下双方均可能遭受不可弥补的损害。",
+        "if_counterparty_adds_without_bond": "可接受'法院可酌情要求提供适当担保'，但拒绝'无需担保'。"
+      }
+    },
+    {
+      "id": "std_ot_001",
+      "name": "可分割性与弃权",
+      "name_en": "Severability and Waiver",
+      "clause_type": "其他",
+      "priority": "P3",
+      "triggers": [
+        "对方删除可分割性条款",
+        "对方将'修改并解释'改为'直接删除'"
+      ],
+      "text_en": "If any provision of this Agreement is found by a proper authority to be unenforceable or invalid, such unenforceability or invalidity will not render this Agreement unenforceable or invalid as a whole and, in such event, such provision will be changed and interpreted so as to best accomplish the objectives of such unenforceable or invalid provision within the limits of applicable law or applicable court decisions. Any waiver or failure to enforce any provision of this Agreement on one occasion will not be deemed a waiver of any other provision or of such provision on any other occasion.",
+      "text_cn": "如主管机关认定本协议任何条款不可执行或无效，该等不可执行性或无效性不会导致本协议整体不可执行或无效，在此情况下，该条款将被修改和解释，以在适用法律或适用法院判决的限度内，最大限度地实现该不可执行或无效条款的目标。对本协议任何条款在某一情形下的弃权或未能执行，不得被视为对任何其他条款或该条款在任何其他情形下的弃权。",
+      "covers": ["severability", "waiver", "partial_invalidity"],
+      "key_terms": {
+        "severability": "Invalid provision does not invalidate whole agreement",
+        "modification": "Changed and interpreted to best accomplish objectives",
+        "waiver": "One-time waiver does not apply to other provisions or occasions"
+      },
+      "usage_notes": "标准法律条款，通常争议不大。可分割性条款确保局部无效不会导致整体协议失效。弃权条款防止一方因某次未执行权利而永久丧失该权利。"
+    },
+    {
+      "id": "std_ot_002",
+      "name": "转让限制（须双向对等）",
+      "name_en": "Assignment Restrictions (Must Be Bilateral)",
+      "clause_type": "其他",
+      "priority": "P1",
+      "triggers": [
+        "对方仅限制接收方转让而不限制自身",
+        "对方允许无条件转让给关联公司",
+        "对方删除转让限制条款"
+      ],
+      "text_en": "Neither party will assign or transfer any rights or obligations under this Agreement without the prior written consent of the other party and any attempted assignment, subcontract, delegation, or transfer in violation of the foregoing will be null and void.",
+      "text_cn": "未经另一方事先书面同意，任何一方不得转让或转移其在本协议项下的任何权利或义务，任何违反前述规定的转让、分包、委托或转移企图均属无效。",
+      "covers": ["assignment", "transfer", "subcontract", "delegation", "bilateral"],
+      "key_terms": {
+        "standard_text_bilateral": "Neither party will assign... without prior written consent of the other party",
+        "mutual": true,
+        "consequence": "Null and void"
+      },
+      "usage_notes": "⚠️ 重要：Moonshot 标准 MNDA 模板原文（§16 / 第22段）为单向条款：'The Recipient will not assign or transfer any rights or obligations under this Agreement without the prior written consent of the Discloser' — 仅限制 Recipient 转让。作为标准 MNDA，此条款在 Mutual NDA 场景下应修改为双向对等（如上方 text_en 所示）。审阅对方模板时：(1) 如对方保留单向限制（仅限制 Moonshot 转让），必须要求改为双向；(2) 如对方增加'可向关联公司无条件转让'，应限制为'关联公司且该关联公司受同等义务约束'。",
+      "adaptation_guide": {
+        "if_counterparty_insists_on_unilateral": "坚决要求双向对等。Mutual NDA 下双方权利义务对等，转让限制亦应对等。",
+        "if_affiliate_transfer_needed": "可接受'经事先书面同意可向关联公司转让，但该关联公司须受本协议同等约束'。"
+      }
+    },
+    {
+      "id": "std_ot_003",
+      "name": "通知条款",
+      "name_en": "Notices",
+      "clause_type": "其他",
+      "priority": "P3",
+      "triggers": [
+        "对方删除书面通知要求",
+        "对方仅允许电子通知而无书面备份"
+      ],
+      "text_en": "All notices or reports permitted or required under this Agreement will be in writing and will be delivered by personal delivery, electronic mail, facsimile transmission or by certified or registered mail, return receipt requested, and will be deemed given upon personal delivery, five (5) days after deposit in the mail, or upon acknowledgment of receipt of electronic transmission. Notices will be sent to the addresses set forth at the end of this Agreement or such other address as either party may specify in writing.",
+      "text_cn": "本协议项下允许或要求的所有通知或报告均应以书面形式发出，并通过专人送达、电子邮件、传真或要求回执的挂号信或认证邮件方式送达，并在专人送达时、邮件寄出五（5）日后或电子传输确认收到时视为已送达。通知应发送至本协议末尾载明的地址或任一方可能书面指定的其他地址。",
+      "covers": ["notice", "delivery_method", "deemed_delivery", "address_change"],
+      "key_terms": {
+        "form": "In writing",
+        "methods": "Personal delivery, email, fax, certified/registered mail",
+        "deemed_delivery": "Personal delivery = immediate; mail = 5 days; email = upon acknowledgment"
+      },
+      "usage_notes": "标准通知条款，通常争议不大。注意保留'书面形式'和多种送达方式，确保法律程序中的送达有效性。"
+    },
+    {
+      "id": "std_ob_002",
+      "name": "软件反向工程限制",
+      "name_en": "Software Reverse Engineering Restriction",
+      "clause_type": "保密义务",
+      "priority": "P1",
+      "triggers": [
+        "对方删除反向工程限制",
+        "对方将'不得修改'改为'经合理通知后可修改'",
+        "对方增加'为互操作性目的可反向工程'例外"
+      ],
+      "text_en": "The Recipient agrees that the software programs of the Discloser contain valuable confidential information and agrees that it will not modify, reverse engineer, decompile, create other works from, or disassemble any software programs contained in the Confidential Information without the prior written consent of the Discloser. The Recipient agrees that it will not use any Confidential Information to create any software programs that is similar to any software programs contained in the Confidential Information.",
+      "text_cn": "接收方同意，披露方的软件程序包含有价值的保密信息，并同意未经披露方事先书面同意，不得修改、反向工程、反编译、基于披露方软件程序创作其他作品或拆解保密信息中包含的任何软件程序。接收方同意，不得使用任何保密信息创作与保密信息中包含的任何软件程序相似的任何软件程序。",
+      "covers": ["reverse_engineering", "decompilation", "disassembly", "software_modification", "similar_software"],
+      "key_terms": {
+        "prohibited_acts": "Modify, reverse engineer, decompile, create derivative works, disassemble",
+        "scope": "Software programs contained in Confidential Information",
+        "additional_restriction": "No use of CI to create similar software programs"
+      },
+      "usage_notes": "软件反向工程限制是保护软件商业秘密和技术机密的关键条款。Moonshot 作为 AI 公司，软件算法和模型架构是核心资产，此条款尤为重要。如对方增加'为互操作性目的可反向工程'等例外，需评估是否可接受（通常仅适用于软件兼容性场景，不适用于 AI 模型）。",
+      "adaptation_guide": {
+        "if_counterparty_adds_interoperability_exception": "如对方为软件公司且确有互操作需求，可接受 narrowly tailored 的互操作例外，但须限定为'仅为实现互操作所必需'且'不得披露给他人'。",
+        "if_no_software_involved": "如双方合作完全不涉及软件，此条款可删除或简化为一般性保密义务。"
+      }
+    },
+    {
+      "id": "std_ot_004",
+      "name": "完整协议与修改",
+      "name_en": "Entire Agreement and Amendment",
+      "clause_type": "其他",
+      "priority": "P2",
+      "triggers": [
+        "对方删除'完整协议'条款",
+        "对方将'双方书面签署'改为'单方通知'即可修改"
+      ],
+      "text_en": "This Agreement is the final, complete and exclusive agreement of the parties with respect to the subject matters hereof and supersedes and merges all prior discussions between the parties with respect to such matters. No modification of or amendment to this Agreement will be effective unless in writing and signed by the party to be charged.",
+      "text_cn": "本协议是双方就本协议标的达成的最终、完整且排他性的协议，并取代和合并双方此前就该等事项进行的所有讨论。对本协议的任何修改或修订，除非以书面形式并经拟被约束的一方签署，否则不生效。",
+      "covers": ["entire_agreement", "merger", "prior_discussions", "amendment", "written_signed"],
+      "key_terms": {
+        "entire_agreement": "Final, complete and exclusive agreement",
+        "supersedes": "All prior discussions",
+        "amendment": "In writing and signed by the party to be charged"
+      },
+      "usage_notes": "完整协议条款防止对方援引谈判过程中的口头承诺或前期邮件作为合同依据。'拟被约束的一方签署'（signed by the party to be charged）是英美法系的经典表述，确保修改对双方均有约束力。如对方将修改条件放宽为'单方通知'或'邮件确认'，必须拒绝。"
     }
   ]
 }

@@ -277,6 +277,359 @@ class DocumentValidator:
 
 
 # ---------------------------------------------------------------------------
+# DOCX 完整性校验与修复
+# ---------------------------------------------------------------------------
+
+import io
+import tempfile
+import zipfile
+from xml.etree import ElementTree as ET
+
+
+class DocxIntegrityChecker:
+    """DOCX 文件完整性校验与自动修复器。
+
+    校验维度：
+      1. ZIP 包完整性（testzip）
+      2. 必需文件存在性
+      3. XML 可解析性
+      4. 命名空间前缀声明完整性
+      5. comments / commentsExtended ID 一致性
+
+    修复策略：
+      1. 补充缺失的命名空间前缀（从原始 XML 提取）
+      2. 移除 XML 非法控制字符
+      3. 对无法解析的 XML 回退到原始文件
+    """
+
+    REQUIRED_PARTS = {
+        "[Content_Types].xml",
+        "_rels/.rels",
+        "word/document.xml",
+    }
+
+    # OOXML 中常见但可能被 ElementTree 丢弃的命名空间
+    KNOWN_NAMESPACES = {
+        "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+        "w14": "http://schemas.microsoft.com/office/word/2010/wordml",
+        "w15": "http://schemas.microsoft.com/office/word/2012/wordml",
+        "w16cex": "http://schemas.microsoft.com/office/word/2018/wordml/cex",
+        "w16sdtdh": "http://schemas.microsoft.com/office/word/2020/wordml/sdtdatahash",
+        "w16se": "http://schemas.microsoft.com/office/word/2015/wordml/symex",
+        "wpg": "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup",
+        "wpi": "http://schemas.microsoft.com/office/word/2010/wordprocessingInk",
+        "wne": "http://schemas.microsoft.com/office/word/2006/wordml",
+        "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
+        "wpc": "http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas",
+        "wct": "http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas",
+        "cx": "http://schemas.microsoft.com/office/drawing/2014/chartex",
+        "mc": "http://schemas.openxmlformats.org/markup-compatibility/2006",
+        "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+        "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+        "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",
+        "o": "urn:schemas-microsoft-com:office:office",
+        "v": "urn:schemas-microsoft-com:vml",
+        "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
+        "ce": "http://schemas.microsoft.com/office/2018/calendar",
+    }
+
+    @classmethod
+    def check_xml_parse(cls, xml_bytes: bytes, filename: str = "") -> tuple[bool, str]:
+        """检查 XML 是否能被正确解析。"""
+        try:
+            ET.fromstring(xml_bytes)
+            return True, ""
+        except ET.ParseError as e:
+            return False, f"{filename} XML 解析失败: {e}"
+
+    @classmethod
+    def check_namespace_prefixes(
+        cls, xml_bytes: bytes, filename: str = ""
+    ) -> tuple[bool, str, list[str]]:
+        """检查 XML 中使用的所有命名空间前缀是否已在根元素声明。"""
+        try:
+            tree = ET.fromstring(xml_bytes)
+        except ET.ParseError as e:
+            return False, f"{filename} XML 解析失败: {e}", []
+
+        root = tree
+        declared_prefixes = set()
+        for attr, val in root.attrib.items():
+            if attr.startswith("xmlns:"):
+                declared_prefixes.add(attr.split(":", 1)[1])
+
+        undeclared = set()
+        for elem in root.iter():
+            tag = elem.tag
+            # ElementTree 解析后，带命名空间的 tag 格式为 {uri}localname
+            # 只有原始格式 prefix:localname 才需要检查
+            if not tag.startswith("{") and ":" in tag:
+                prefix = tag.split(":", 1)[0]
+                if prefix not in declared_prefixes and prefix != "xml":
+                    undeclared.add(prefix)
+            for attr in elem.attrib:
+                # ElementTree 解析后，带命名空间的属性格式为 {uri}attrname
+                # 不应把 {http://...}attr 中的冒号误判为前缀分隔符
+                if not attr.startswith("{") and ":" in attr:
+                    prefix = attr.split(":", 1)[0]
+                    if prefix not in declared_prefixes and prefix != "xml":
+                        undeclared.add(prefix)
+
+        if undeclared:
+            return (
+                False,
+                f"{filename} 存在未声明的命名空间前缀: {undeclared}",
+                list(undeclared),
+            )
+        return True, "", []
+
+    @classmethod
+    def check_docx_integrity(cls, docx_path: str) -> tuple[bool, list[str]]:
+        """检查 DOCX 文件完整性。
+
+        Returns:
+            (是否通过, 错误信息列表)
+        """
+        errors = []
+        try:
+            with zipfile.ZipFile(docx_path, "r") as zf:
+                bad_file = zf.testzip()
+                if bad_file:
+                    errors.append(f"ZIP 包损坏: {bad_file}")
+
+                namelist = zf.namelist()
+                for part in cls.REQUIRED_PARTS:
+                    if part not in namelist:
+                        errors.append(f"缺失必需文件: {part}")
+
+                for name in namelist:
+                    if name.endswith(".xml") or name.endswith(".rels"):
+                        try:
+                            xml_bytes = zf.read(name)
+                            ok, msg = cls.check_xml_parse(xml_bytes, name)
+                            if not ok:
+                                errors.append(msg)
+                            else:
+                                ok, msg, _ = cls.check_namespace_prefixes(
+                                    xml_bytes, name
+                                )
+                                if not ok:
+                                    errors.append(msg)
+                        except Exception as e:
+                            errors.append(f"{name} 读取失败: {e}")
+        except zipfile.BadZipFile:
+            errors.append("文件不是有效的 ZIP 格式")
+        except Exception as e:
+            errors.append(f"打开文件失败: {e}")
+
+        return len(errors) == 0, errors
+
+    @classmethod
+    def check_comments_sync(cls, docx_path: str) -> tuple[bool, list[str]]:
+        """检查 comments.xml 与 commentsExtended.xml 的 ID 一致性。"""
+        errors = []
+        W14 = "{http://schemas.microsoft.com/office/word/2010/wordml}"
+        CE = "{http://schemas.microsoft.com/office/2011/relationships/commentsExtended}"
+
+        try:
+            with zipfile.ZipFile(docx_path, "r") as zf:
+                comment_ids = set()
+                if "word/comments.xml" in zf.namelist():
+                    try:
+                        root = ET.fromstring(zf.read("word/comments.xml"))
+                        for c in root.iter(f"{W14}comment"):
+                            cid = c.get(f"{W14}id")
+                            if cid:
+                                comment_ids.add(cid)
+                    except Exception as e:
+                        errors.append(f"comments.xml 解析失败: {e}")
+
+                if "word/commentsExtended.xml" in zf.namelist():
+                    try:
+                        root = ET.fromstring(zf.read("word/commentsExtended.xml"))
+                        for c in root.iter(f"{CE}comment"):
+                            cid = c.get(f"{CE}id")
+                            if cid and cid not in comment_ids:
+                                errors.append(
+                                    f"commentsExtended.xml 中的 ID {cid} 在 comments.xml 中不存在"
+                                )
+                    except Exception as e:
+                        errors.append(f"commentsExtended.xml 解析失败: {e}")
+        except Exception as e:
+            errors.append(f"检查 comments 同步失败: {e}")
+
+        return len(errors) == 0, errors
+
+    @classmethod
+    def fix_namespace_prefixes(
+        cls, xml_bytes: bytes, reference_xml_bytes: bytes | None = None
+    ) -> bytes:
+        """尝试修复未声明的命名空间前缀。
+
+        策略：
+          1. 从参考 XML 或已知命名空间表中提取前缀映射
+          2. 在根元素上补充缺失的声明
+        """
+        import re
+
+        text = xml_bytes.decode("utf-8", errors="replace")
+
+        # 构建前缀 -> URI 映射
+        ns_map = dict(cls.KNOWN_NAMESPACES)
+        if reference_xml_bytes:
+            ref_text = reference_xml_bytes.decode("utf-8", errors="replace")
+            for m in re.finditer(
+                r'xmlns:([a-zA-Z0-9_]+)="([^"]+)"', ref_text
+            ):
+                ns_map[m.group(1)] = m.group(2)
+
+        # 查找当前根元素
+        root_match = re.search(r'<([a-zA-Z0-9_:]+)[^>]*>', text, re.DOTALL)
+        if not root_match:
+            return xml_bytes
+
+        root_tag = root_match.group(1)
+        root_start = root_match.group(0)
+
+        # 已声明的前缀
+        existing = set()
+        for m in re.finditer(r'xmlns:([a-zA-Z0-9_]+)="', root_start):
+            existing.add(m.group(1))
+
+        # 使用中但未声明的前缀
+        needed = set()
+        for m in re.finditer(r'<([a-zA-Z0-9_]+):', text):
+            p = m.group(1)
+            if p not in ("xml", "xmlns"):
+                needed.add(p)
+        for m in re.finditer(r'\s([a-zA-Z0-9_]+):', text):
+            p = m.group(1)
+            if p not in ("xml", "xmlns"):
+                needed.add(p)
+
+        additions = []
+        for p in needed:
+            if p not in existing and p in ns_map:
+                additions.append(f' xmlns:{p}="{ns_map[p]}"')
+
+        if additions:
+            insert_pos = root_start.rfind(">")
+            if insert_pos > 0:
+                new_root = (
+                    root_start[:insert_pos] + "".join(additions) + root_start[insert_pos:]
+                )
+                text = text.replace(root_start, new_root, 1)
+                return text.encode("utf-8")
+
+        return xml_bytes
+
+    @classmethod
+    def fix_xml_illegal_chars(cls, xml_bytes: bytes) -> bytes:
+        """移除 XML 中的非法控制字符（#x0-#x8, #xB, #xC, #xE-#x1F, #x7F-#x9F）。"""
+        text = xml_bytes.decode("utf-8", errors="replace")
+        # 保留合法的控制字符（tab, LF, CR），移除其余 C0/C1 控制字符
+        cleaned = "".join(
+            ch
+            for ch in text
+            if ord(ch) >= 0x20
+            or ch in "\t\n\r"
+            or (0x10000 <= ord(ch) <= 0x10FFFF)
+        )
+        return cleaned.encode("utf-8")
+
+    @classmethod
+    def repair_docx(
+        cls, docx_path: str, reference_docx_path: str | None = None
+    ) -> tuple[bool, list[str]]:
+        """尝试修复 DOCX 文件。
+
+        策略：
+          1. 解压到临时目录
+          2. 对每个 XML 文件修复非法字符和命名空间前缀
+          3. 如果仍然解析失败且存在参考文件，回退到原始文件
+          4. 重新打包并替换原文件
+
+        Returns:
+            (是否修复成功, 错误/警告信息列表)
+        """
+        errors = []
+
+        # 读取参考文件（原始未修改的文档）作为命名空间来源
+        ref_parts: dict[str, bytes] = {}
+        if reference_docx_path and zipfile.is_zipfile(reference_docx_path):
+            try:
+                with zipfile.ZipFile(reference_docx_path, "r") as zf:
+                    for name in zf.namelist():
+                        ref_parts[name] = zf.read(name)
+            except Exception as e:
+                errors.append(f"读取参考文件失败: {e}")
+
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tmp_path = Path(tmpdir)
+
+                # 解压
+                try:
+                    with zipfile.ZipFile(docx_path, "r") as zf:
+                        zf.extractall(tmp_path)
+                except Exception as e:
+                    errors.append(f"解压失败: {e}")
+                    return False, errors
+
+                # 修复 XML 文件
+                for xml_file in sorted(tmp_path.rglob("*.xml")):
+                    rel_path = str(xml_file.relative_to(tmp_path)).replace("\\", "/")
+                    # 也包括 .rels 文件
+                    rels_file = xml_file.with_suffix(".rels")
+                    files_to_check = [xml_file]
+                    if rels_file.exists() and rels_file.suffix == ".rels":
+                        files_to_check.append(rels_file)
+
+                    for fpath in files_to_check:
+                        rel_fpath = str(fpath.relative_to(tmp_path)).replace("\\", "/")
+                        try:
+                            data = fpath.read_bytes()
+                            fixed = cls.fix_xml_illegal_chars(data)
+                            fixed = cls.fix_namespace_prefixes(
+                                fixed, ref_parts.get(rel_fpath)
+                            )
+
+                            # 验证修复后是否可解析
+                            try:
+                                ET.fromstring(fixed)
+                                fpath.write_bytes(fixed)
+                            except ET.ParseError as pe:
+                                if rel_fpath in ref_parts:
+                                    fpath.write_bytes(ref_parts[rel_fpath])
+                                    errors.append(
+                                        f"{rel_fpath} 无法修复({pe})，已回退到原始文件"
+                                    )
+                                else:
+                                    errors.append(
+                                        f"{rel_fpath} 无法修复且无参考文件: {pe}"
+                                    )
+                        except Exception as e:
+                            errors.append(f"{rel_fpath} 修复异常: {e}")
+
+                # 重新打包
+                repaired = docx_path + ".repaired.docx"
+                with zipfile.ZipFile(repaired, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for f in sorted(tmp_path.rglob("*")):
+                        if f.is_file():
+                            rel = str(f.relative_to(tmp_path)).replace("\\", "/")
+                            zf.write(f, rel)
+
+                # 替换原文件
+                Path(repaired).replace(Path(docx_path))
+
+        except Exception as e:
+            errors.append(f"修复过程异常: {e}")
+
+        return len(errors) == 0, errors
+
+
+# ---------------------------------------------------------------------------
 # CLI 入口（用于独立测试）
 # ---------------------------------------------------------------------------
 

@@ -183,13 +183,14 @@ class RiskAssessor:
         self.risk_levels = rules_config.get("risk_levels", {})
         self.scoring = rules_config.get("scoring", {})
 
-    def assess(self, revision: dict, clause_type: str, mode: str = "revision") -> list[dict]:
+    def assess(self, revision: dict, clause_type: str, mode: str = "revision", vendor_country: str | None = None) -> list[dict]:
         """Apply all matching risk rules to a revision.
 
         Args:
             revision: The revision/existing record to assess.
             clause_type: The classified clause type.
             mode: "revision" (default) or "template".
+            vendor_country: Detected vendor (Party B) country code (e.g., "US", "HK", "SG").
 
         Returns list of matched rule results."""
         matched = []
@@ -227,6 +228,16 @@ class RiskAssessor:
             applicable_modes = rule.get("applies_to_modes", ["revision", "template"])
             if mode not in applicable_modes:
                 continue
+
+            # Check vendor country filter (optional, default applies to all countries)
+            applicable_countries = rule.get("applies_to_vendor_countries", [])
+            if applicable_countries:
+                # If vendor country is explicitly detected, it must be in the list
+                if vendor_country is not None and vendor_country not in applicable_countries:
+                    continue
+                # If vendor country is not detected, "general" must be in the list
+                if vendor_country is None and "general" not in applicable_countries:
+                    continue
 
             # Check text patterns
             patterns = rule.get("patterns", {})
@@ -389,11 +400,13 @@ def analyze_revisions(docx_path: str, playbook: str | None = None, mode: str = "
     analyzed = []
     risk_counts = {"high": 0, "medium": 0, "low": 0, "unknown": 0}
 
+    vendor_country = raw.get("party_metadata", {}).get("vendor_country")
+
     for rev in raw["ordered_revisions"]:
         location = rev.get("location", "")
         clause_type = classifier.classify(location)
 
-        rule_matches = assessor.assess(rev, clause_type, mode=mode)
+        rule_matches = assessor.assess(rev, clause_type, mode=mode, vendor_country=vendor_country)
 
         # Determine preliminary risk level
         if rule_matches:
@@ -447,6 +460,7 @@ def analyze_revisions(docx_path: str, playbook: str | None = None, mode: str = "
         "document": docx_path,
         "mode": mode,
         "playbook": playbook,
+        "vendor_country": vendor_country,
         "summary": summary,
         "analyzed_revisions": analyzed,
         "revision_clusters": clusters,

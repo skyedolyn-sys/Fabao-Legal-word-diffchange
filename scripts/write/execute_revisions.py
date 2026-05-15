@@ -588,13 +588,60 @@ class RevisionExecutor:
         return True, f"已追加到段落 {idx}"
 
     def save(self, output_path: str | None = None) -> str:
-        """保存修改后的文档。"""
+        """保存修改后的文档，并执行完整性校验与自动修复。"""
+        from validators import DocxIntegrityChecker
+
         # 标记就地修改的 XML part 为已修改
         self.op.mark_modified("word/document.xml")
         self.op.mark_modified("word/comments.xml")
         # 同步 commentsExtended.xml（set_comments_extended 内部会标记 modified）
         self.injector.sync_comments_extended(self.op)
-        return self.op.save(output_path=output_path, backup=True)
+
+        # 执行保存
+        saved_path = self.op.save(output_path=output_path, backup=True)
+
+        # 保存后完整性校验
+        checker = DocxIntegrityChecker()
+        is_valid, errors = checker.check_docx_integrity(saved_path)
+
+        if not is_valid:
+            print(f"\n⚠ 文档完整性校验失败 ({len(errors)} 项):")
+            for e in errors:
+                print(f"  ✗ {e}")
+
+            # 尝试自动修复
+            print("\n尝试自动修复...")
+            original_path = str(self.op.docx_path)
+            repaired, repair_errors = checker.repair_docx(saved_path, original_path)
+
+            if repaired and not repair_errors:
+                print("✓ 自动修复成功")
+            elif repaired:
+                print(f"⚠ 自动修复完成，但有 {len(repair_errors)} 项警告:")
+                for e in repair_errors:
+                    print(f"  ⚠ {e}")
+            else:
+                print(f"✗ 自动修复失败 ({len(repair_errors)} 项):")
+                for e in repair_errors:
+                    print(f"  ✗ {e}")
+
+            # 修复后再次校验
+            is_valid2, errors2 = checker.check_docx_integrity(saved_path)
+            if is_valid2:
+                print("✓ 修复后校验通过")
+            else:
+                print(f"⚠ 修复后仍有 {len(errors2)} 项问题，文档可能无法正常打开:")
+                for e in errors2:
+                    print(f"  ✗ {e}")
+
+        # comments 同步校验
+        sync_ok, sync_errors = checker.check_comments_sync(saved_path)
+        if not sync_ok:
+            print(f"\n⚠ Comments 同步校验失败 ({len(sync_errors)} 项):")
+            for e in sync_errors:
+                print(f"  ✗ {e}")
+
+        return saved_path
 
     def post_validate(self, expected_items: int) -> list[str]:
         """后置验证。"""

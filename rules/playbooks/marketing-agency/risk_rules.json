@@ -203,6 +203,78 @@
       "rationale": "GST税率或计税方式变更可能导致甲方成本不可控增加"
     },
     {
+      "id": "mkt_tax_001",
+      "name": "银行手续费转嫁给甲方",
+      "applies_to_clause_types": ["返点与费用"],
+      "applies_to_revision_types": ["insertion"],
+      "applies_to_vendor_countries": ["US", "HK", "SG", "general"],
+      "patterns": {
+        "insertion": ["银行手续费由甲方承担", "中转行费用由甲方承担", "汇款费用由甲方承担", "银行手续费由双方均担", "到账金额扣除手续费"]
+      },
+      "risk_level": "medium",
+      "rationale": "银行手续费、中转行费用转嫁给甲方增加甲方付款成本，行业惯例应由收款方（乙方）承担"
+    },
+    {
+      "id": "mkt_tax_002",
+      "name": "代扣代缴义务转嫁给甲方",
+      "applies_to_clause_types": ["返点与费用"],
+      "applies_to_revision_types": ["insertion"],
+      "applies_to_vendor_countries": ["US", "general"],
+      "patterns": {
+        "insertion": ["甲方代扣", "甲方代扣代缴", "甲方扣缴", "withholding by Party A", "甲方负责扣缴", "甲方承担预提税", "买方代扣"]
+      },
+      "risk_level": "high",
+      "rationale": "将代扣代缴/预提税义务转嫁给甲方，增加甲方税务合规成本和操作复杂度，且可能涉及跨境税务申报。US乙方此风险尤为突出"
+    },
+    {
+      "id": "mkt_tax_003",
+      "name": "服务性质被定义为royalty或IP许可",
+      "applies_to_clause_types": ["返点与费用", "知识产权"],
+      "applies_to_revision_types": ["insertion"],
+      "applies_to_vendor_countries": ["US", "HK", "general"],
+      "patterns": {
+        "insertion": ["特许权使用费", "royalty", "licensing fees", "许可费", "IP许可", "知识产权许可", "license fees", "著作权使用费"]
+      },
+      "risk_level": "high",
+      "rationale": "将服务定义为royalty/IP许可可能触发预提税（withholding tax）义务，增加甲方税务负担和申报复杂度。推广服务应明确为服务性质，不涉及IP转让或许可。US/HK乙方需特别注意"
+    },
+    {
+      "id": "mkt_tax_004",
+      "name": "税务发票要求缺失或不完整",
+      "applies_to_clause_types": ["返点与费用"],
+      "applies_to_revision_types": ["deletion"],
+      "applies_to_vendor_countries": ["US", "HK", "SG", "CN", "general"],
+      "patterns": {
+        "deletion": ["GST注册号", "税务发票", "发票应载明", "法定名称", "注册地址", "商业登记号码", "Business Registration Number", "GST registration number"]
+      },
+      "risk_level": "medium",
+      "rationale": "删除税务发票的具体要求（如GST注册号、BRN、法定名称、注册地址等），可能导致甲方无法获得合规发票进行税务抵扣和付款审批"
+    },
+    {
+      "id": "mkt_tax_005",
+      "name": "GST反向征税机制对甲方不利",
+      "applies_to_clause_types": ["返点与费用"],
+      "applies_to_revision_types": ["insertion"],
+      "applies_to_vendor_countries": ["US", "HK", "CN", "general"],
+      "patterns": {
+        "insertion": ["reverse charge", "反向征税", "overseas vendor registration", "OVR", "进口服务", "imported services", "甲方缴纳GST", "Customer shall account for GST"]
+      },
+      "risk_level": "medium",
+      "rationale": "如乙方为境外非SG公司，reverse charge机制下甲方需自行申报和缴纳GST。需确认甲方是否为GST注册公司，否则可能无法抵扣进项税额，导致实际税负增加。SG本地乙方不适用此规则"
+    },
+    {
+      "id": "mkt_tax_006",
+      "name": "汇率换算条款不利",
+      "applies_to_clause_types": ["返点与费用"],
+      "applies_to_revision_types": ["insertion"],
+      "applies_to_vendor_countries": ["US", "HK", "SG", "general"],
+      "patterns": {
+        "insertion": ["汇率由乙方决定", "按乙方指定汇率", "汇率浮动风险由甲方承担", "汇率损失由甲方承担"]
+      },
+      "risk_level": "medium",
+      "rationale": "汇率换算方式由乙方单方决定或汇率风险全部转嫁给甲方，可能导致甲方实际支付金额不可控。建议约定固定汇率基准或双方认可的汇率来源"
+    },
+    {
       "id": "mkt_template_001",
       "name": "宽泛的乙方免责（模板）",
       "applies_to_clause_types": ["违约责任", "平台与服务范围"],
